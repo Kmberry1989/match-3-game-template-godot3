@@ -1,0 +1,142 @@
+[gd_scene load_steps=11 format=2]
+
+[ext_resource path="res://Scripts/BonusSlotMachine.gd" type="Script" id=1]
+[ext_resource path="res://Assets/BonusSlot/slot_frame.png" type="Texture" id=2]
+[ext_resource path="res://Assets/BonusSlot/symbol_coin.png" type="Texture" id=3]
+[ext_resource path="res://Assets/BonusSlot/symbol_xp.png" type="Texture" id=4]
+[ext_resource path="res://Assets/BonusSlot/symbol_wildcard.png" type="Texture" id=5]
+[ext_resource path="res://Assets/BonusSlot/symbol_row_clear.png" type="Texture" id=6]
+[ext_resource path="res://Assets/BonusSlot/symbol_col_clear.png" type="Texture" id=7]
+[ext_resource path="res://Assets/BonusSlot/symbol_multiplier_2x.png" type="Texture" id=8]
+[ext_resource path="res://Assets/BonusSlot/symbol_multiplier_3x.png" type="Texture" id=9]
+[ext_resource path="res://Assets/BonusSlot/symbol_free_spin.png" type="Texture" id=10]
+
+[node name="BonusSlotMachine" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_right = 1024.0
+margin_bottom = 576.0
+mouse_filter = 2
+script = ExtResource( 1 )
+apply_manual_textures_on_ready = true
+reel1_textures = [ ExtResource( 3 ), ExtResource( 4 ), ExtResource( 5 ), ExtResource( 6 ), ExtResource( 7 ), ExtResource( 8 ), ExtResource( 9 ), ExtResource( 10 ) ]
+reel2_textures = [ ExtResource( 3 ), ExtResource( 4 ), ExtResource( 5 ), ExtResource( 6 ), ExtResource( 7 ), ExtResource( 8 ), ExtResource( 9 ), ExtResource( 10 ) ]
+reel3_textures = [ ExtResource( 3 ), ExtResource( 4 ), ExtResource( 5 ), ExtResource( 6 ), ExtResource( 7 ), ExtResource( 8 ), ExtResource( 9 ), ExtResource( 10 ) ]
+use_fallback_color_reels = false
+
+[node name="Background" type="TextureRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+stretch_mode = 5
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Dimmer" type="ColorRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color( 0, 0, 0, 0.6 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Panel" type="Panel" parent="."]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -640.0
+margin_top = -360.0
+margin_right = 640.0
+margin_bottom = 360.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="SlotFrame" type="Sprite" parent="Panel"]
+position = Vector2( 246, 421 )
+scale = Vector2( 0.96036, 1.03603 )
+texture = ExtResource( 2 )
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 22.0
+margin_top = 70.0
+margin_right = -26.0
+margin_bottom = 22.0
+rect_scale = Vector2( 0.96743, 0.885789 )
+custom_constants/separation = 20
+alignment = 1
+
+[node name="Title" type="Label" parent="Panel/VBox"]
+margin_top = 102.0
+margin_right = 1232.0
+margin_bottom = 116.0
+align = 1
+
+[node name="Reels" type="HBoxContainer" parent="Panel/VBox"]
+margin_top = 136.0
+margin_right = 1232.0
+margin_bottom = 456.0
+custom_constants/separation = 24
+alignment = 1
+
+[node name="Reel1" type="Control" parent="Panel/VBox/Reels"]
+margin_left = 112.0
+margin_right = 432.0
+margin_bottom = 320.0
+rect_min_size = Vector2( 320, 320 )
+mouse_filter = 2
+
+[node name="Glow" type="TextureRect" parent="Panel/VBox/Reels/Reel1"]
+visible = false
+mouse_filter = 2
+
+[node name="Reel2" type="Control" parent="Panel/VBox/Reels"]
+margin_left = 456.0
+margin_right = 776.0
+margin_bottom = 320.0
+rect_min_size = Vector2( 320, 320 )
+mouse_filter = 2
+
+[node name="Glow" type="TextureRect" parent="Panel/VBox/Reels/Reel2"]
+visible = false
+mouse_filter = 2
+
+[node name="Reel3" type="Control" parent="Panel/VBox/Reels"]
+margin_left = 800.0
+margin_right = 1120.0
+margin_bottom = 320.0
+rect_min_size = Vector2( 320, 320 )
+mouse_filter = 2
+
+[node name="Glow" type="TextureRect" parent="Panel/VBox/Reels/Reel3"]
+visible = false
+mouse_filter = 2
+
+[node name="SpacerBelowReels" type="Control" parent="Panel/VBox"]
+margin_top = 476.0
+margin_right = 1232.0
+margin_bottom = 516.0
+rect_min_size = Vector2( 0, 40 )
+
+[node name="HBox" type="HBoxContainer" parent="Panel/VBox"]
+margin_top = 536.0
+margin_right = 1232.0
+margin_bottom = 536.0
+custom_constants/separation = 24
+alignment = 1
+
+[node name="SpinButton" type="TextureButton" parent="Panel/VBox/HBox"]
+margin_left = 616.0
+margin_right = 616.0
+
+[node name="ResultLabel" type="Label" parent="Panel/VBox"]
+margin_top = 556.0
+margin_right = 1232.0
+margin_bottom = 570.0
+align = 1
+
+[connection signal="pressed" from="Panel/VBox/HBox/SpinButton" to="." method="_on_SpinButton_pressed"]

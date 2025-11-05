@@ -1,0 +1,11 @@
+[gd_scene load_steps=5 format=2]
+
+[ext_resource type="Script" path="res://Scripts/Shop.gd" id=1]
+
+[node name="Shop" type="Control"]
+offset_left = 267.0
+offset_top = 433.0
+offset_right = 267.0
+offset_bottom = 433.0
+script = ExtResource( 1 )
+

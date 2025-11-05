@@ -1,0 +1,121 @@
+[gd_scene load_steps=2 format=2]
+
+[ext_resource path="res://Scripts/Showcase.gd" type="Script" id=1]
+
+[node name="Showcase" type="Panel"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource( 1 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+alignment = 1
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+margin_right = 540.0
+margin_bottom = 14.0
+text = "Showcase"
+align = 1
+
+[node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
+margin_top = 18.0
+margin_right = 540.0
+margin_bottom = 936.0
+size_flags_vertical = 3
+
+[node name="Trophies" type="Control" parent="VBoxContainer/TabContainer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 4.0
+margin_top = 32.0
+margin_right = -4.0
+margin_bottom = -4.0
+
+[node name="Scroll" type="ScrollContainer" parent="VBoxContainer/TabContainer/Trophies"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+size_flags_vertical = 3
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="TrophyGrid" type="GridContainer" parent="VBoxContainer/TabContainer/Trophies/Scroll"]
+margin_right = 532.0
+size_flags_horizontal = 3
+columns = 4
+
+[node name="Frames" type="Control" parent="VBoxContainer/TabContainer"]
+visible = false
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = 4.0
+margin_top = 32.0
+margin_right = -4.0
+margin_bottom = -4.0
+
+[node name="Scroll" type="ScrollContainer" parent="VBoxContainer/TabContainer/Frames"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+size_flags_vertical = 3
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="FrameGrid" type="GridContainer" parent="VBoxContainer/TabContainer/Frames/Scroll"]
+margin_right = 532.0
+size_flags_horizontal = 3
+columns = 4
+
+[node name="BackButton" type="Button" parent="VBoxContainer"]
+margin_top = 940.0
+margin_right = 540.0
+margin_bottom = 960.0
+text = "Back"
+
+[node name="ViewerOverlay" type="ColorRect" parent="."]
+visible = false
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+color = Color( 0, 0, 0, 0.7 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Center" type="CenterContainer" parent="ViewerOverlay"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="VBox" type="VBoxContainer" parent="ViewerOverlay/Center"]
+margin_left = 30.0
+margin_top = 231.0
+margin_right = 510.0
+margin_bottom = 729.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+alignment = 1
+
+[node name="LargeImage" type="TextureRect" parent="ViewerOverlay/Center/VBox"]
+margin_right = 480.0
+margin_bottom = 480.0
+rect_min_size = Vector2( 480, 480 )
+expand = true
+stretch_mode = 6
+
+[node name="ItemLabel" type="Label" parent="ViewerOverlay/Center/VBox"]
+margin_top = 484.0
+margin_right = 480.0
+margin_bottom = 498.0
+align = 1
+
+[connection signal="pressed" from="VBoxContainer/BackButton" to="." method="_on_back_button_pressed"]

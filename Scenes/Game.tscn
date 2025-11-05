@@ -1,0 +1,65 @@
+[gd_scene load_steps=8 format=2]
+
+[ext_resource path="res://Scripts/Grid.gd" type="Script" id=1]
+[ext_resource path="res://Scripts/Background.gd" type="Script" id=2]
+[ext_resource path="res://Scenes/GameUI.tscn" type="PackedScene" id=3]
+[ext_resource path="res://Scenes/TrophyNotification.tscn" type="PackedScene" id=4]
+[ext_resource path="res://Assets/Visuals/score.png" type="Texture" id=5]
+[ext_resource path="res://Scripts/Game.gd" type="Script" id=6]
+[ext_resource path="res://Scripts/NetGame.gd" type="Script" id=7]
+
+[node name="Game" type="Node"]
+script = ExtResource( 6 )
+
+[node name="Panel" type="Panel" parent="."]
+show_behind_parent = true
+margin_left = -1.0
+margin_top = 3.0
+margin_right = 72.0
+margin_bottom = 87.9795
+rect_scale = Vector2( 7.38928, 11.8582 )
+
+[node name="Grid" type="Node2D" parent="."]
+script = ExtResource( 1 )
+width = 7
+height = 7
+offset = 80
+grid_scale = 0.9
+y_offset = -2
+
+[node name="Background" type="TextureRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource( 2 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+fade_duration = 2.0
+hold_duration = 8.0
+
+[node name="Score" type="Sprite" parent="."]
+visible = false
+position = Vector2( -102.87, 314.886 )
+scale = Vector2( 0.430458, 0.318473 )
+texture = ExtResource( 5 )
+
+[node name="GameUI" parent="." instance=ExtResource( 3 )]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="TrophyNotification" parent="CanvasLayer" instance=ExtResource( 4 )]
+margin_left = -156.0
+margin_top = 2.0
+margin_right = -16.0
+margin_bottom = 102.0
+
+[node name="Score2" type="Sprite" parent="."]
+visible = false
+position = Vector2( 32, 112 )
+scale = Vector2( 0.25, 0.25 )
+texture = ExtResource( 5 )
+
+[node name="PlayerContainer" type="Node2D" parent="."]
+
+[node name="NetGame" type="Node" parent="."]
+script = ExtResource( 7 )
