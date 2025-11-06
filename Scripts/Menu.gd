@@ -117,6 +117,37 @@ func _ready():
 	profile_label.visible = false
 	profile_button.add_child(profile_label)
 
+	# Hint: encourage avatar setup
+	# Shows if no avatar is set OR it's the player's first time seeing this hint.
+	var needs_avatar_hint := false
+	var has_avatar := false
+	var seen_hint := false
+	if typeof(PlayerManager.player_data) == TYPE_DICTIONARY:
+		has_avatar = PlayerManager.player_data.has("avatar") and String(PlayerManager.player_data.get("avatar", "")) != ""
+		seen_hint = bool(PlayerManager.player_data.get("has_seen_profile_hint", false))
+	if (not has_avatar) or (not seen_hint):
+		needs_avatar_hint = true
+	if needs_avatar_hint:
+		var avatar_hint = Label.new()
+		var hint_text = ""
+		if has_avatar:
+			hint_text = "Tip: Customize your avatar in PROFILE"
+		else:
+			hint_text = "Tip: Open PROFILE to set your avatar"
+		avatar_hint.text = hint_text
+		avatar_hint.align = Label.ALIGN_CENTER
+		avatar_hint.valign = Label.VALIGN_CENTER
+		avatar_hint.rect_min_size = Vector2(0, 28)
+		# Soft gold color to match UI accents
+		avatar_hint.add_color_override("font_color", Color(1.0, 0.84, 0.0))
+		_apply_big_font(avatar_hint, 36)
+		vbox.add_child(avatar_hint)
+		_animate_menu_hint(avatar_hint)
+		# Mark as seen so we don’t show this every visit
+		if typeof(PlayerManager.player_data) == TYPE_DICTIONARY:
+			PlayerManager.player_data["has_seen_profile_hint"] = true
+			SaveManager.save_player(PlayerManager.player_data)
+
 	showcase_button.set_normal_texture(load("res://Assets/Visuals/SHOWCASE.png"))
 	showcase_button.set_pressed_texture(load("res://Assets/Visuals/SHOWCASE.png"))
 	showcase_button.set_hover_texture(load("res://Assets/Visuals/SHOWCASE.png"))
@@ -311,3 +342,15 @@ func _apply_big_font(lbl: Label, size: int) -> void:
 		df.font_data = dfd
 		df.size = size
 		lbl.add_font_override("font", df)
+
+func _animate_menu_hint(lbl: Label) -> void:
+	if lbl == null:
+		return
+	# Gentle attention: fade/scale pulse a couple of times
+	lbl.modulate.a = 0.0
+	var t = get_tree().create_tween()
+	t.set_loops(2)
+	t.set_parallel(true)
+	t.tween_property(lbl, "modulate:a", 1.0, 0.5)
+	t.tween_property(lbl, "rect_scale", Vector2(1.05, 1.05), 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	t.tween_property(lbl, "rect_scale", Vector2(1.0, 1.0), 0.5).set_delay(0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)

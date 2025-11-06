@@ -110,8 +110,8 @@ func _on_login_pressed():
 
 	var pd2 = PlayerManager.get("player_data")
 	if typeof(pd2) != TYPE_DICTIONARY or not pd2.has("avatar"):
-		print("[Login.gd] _on_login_pressed: No avatar found, loading Profile scene.")
-		get_tree().change_scene("res://Scenes/Profile.tscn")
+		print("[Login.gd] _on_login_pressed: No avatar found; continuing to Menu.")
+		get_tree().change_scene("res://Scenes/Menu.tscn")
 		return
 	else:
 		print("[Login.gd] _on_login_pressed: Avatar found, changing to Menu scene.")
@@ -139,8 +139,8 @@ func _on_authentication_succeeded(auth_data):
 	print("[Login.gd] _on_authentication_succeeded: Player data loaded.")
 
 	if not PlayerManager.player_data.has("avatar"):
-		print("[Login.gd] _on_authentication_succeeded: No avatar found, loading Profile scene.")
-		get_tree().change_scene("res://Scenes/Profile.tscn")
+		print("[Login.gd] _on_authentication_succeeded: No avatar found; continuing to Menu.")
+		get_tree().change_scene("res://Scenes/Menu.tscn")
 		return
 	else:
 		print("[Login.gd] _on_authentication_succeeded: Avatar found, changing to Menu scene.")
