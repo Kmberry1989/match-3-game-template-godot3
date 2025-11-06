@@ -98,8 +98,12 @@ func _ready() -> void:
 			if not r.is_connected("spin_finished", self, "_on_slot_reel_finished"): r.connect("spin_finished", self, "_on_slot_reel_finished", [i])
 	# If requested, apply editor-provided textures per reel (visual only)
 	_apply_manual_textures_from_exports()
-	_apply_assets()
-	_animate_in()
+    _apply_assets()
+    _animate_in()
+    # Auto-spin after a short delay (no touch needed)
+    yield(get_tree().create_timer(1.0), "timeout")
+    if not _spinning and not _finished:
+        _on_SpinButton_pressed()
 
 func _notification(what):
 	if what == NOTIFICATION_RESIZED:
@@ -109,7 +113,8 @@ func _notification(what):
 		_align_glows_to_reels()
 
 func _build_reel(reel: Control) -> void:
-	reel.rect_clip_content = true
+    # Temporarily disable clipping on reels to avoid issues on iOS Safari
+    reel.rect_clip_content = false
 	reel.rect_min_size = Vector2(_symbol_size)
 	var track: VBoxContainer = VBoxContainer.new()
 	track.name = "Track"

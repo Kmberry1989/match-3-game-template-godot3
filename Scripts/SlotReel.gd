@@ -28,7 +28,7 @@ func _ready():
 func _ensure_built() -> void:
 	if _canvas != null:
 		return
-	rect_clip_content = true
+	rect_clip_content = false
 	_height = tile_size.y * rows_visible
 	# Root clipping container is this Control; create a Node2D canvas for sprites
 	_canvas = Node2D.new()
