@@ -133,12 +133,11 @@ func add_xp(amount):
 			_show_xp_conversion_animation()
 		_leveled = true
 		emit_signal("level_up", player_data["current_level"])
-		# Achievements for reaching certain levels
-		if (Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL)):
-			if player_data["current_level"] >= 2:
-				AchievementManager.unlock_achievement("first_chapter")
-			if player_data["current_level"] >= 10:
-				AchievementManager.unlock_achievement("youve_finally")
+	# Achievements for reaching certain levels (safe wrappers)
+	if player_data["current_level"] >= 2:
+		achievement_unlock("first_chapter")
+	if player_data["current_level"] >= 10:
+		achievement_unlock("youve_finally")
 	save_player_data()
 
 func _show_xp_conversion_animation():
@@ -192,16 +191,15 @@ func update_best_combo(new_combo):
 	if new_combo > player_data["best_combo"]:
 		player_data["best_combo"] = new_combo
 		# Achievement: On a Roll (combo 10)
-		if (Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL)) and new_combo >= 10:
-			AchievementManager.progress_achievement("on_a_roll", 1)
-			AchievementManager.unlock_achievement("on_a_roll")
+		if new_combo >= 10:
+			achievement_progress("on_a_roll", 1)
+			achievement_unlock("on_a_roll")
 		save_player_data()
 
 func add_lines_cleared(lines):
 	player_data["total_lines_cleared"] += lines
 	# Progress: On the Board (clear 100 dots)
-	if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-		AchievementManager.progress_achievement("on_the_board", int(lines))
+	achievement_progress("on_the_board", int(lines))
 	save_player_data()
 
 func get_coins():
@@ -259,20 +257,29 @@ func get_current_level():
 func notify_avatar_changed() -> void:
 	emit_signal("avatar_changed")
 	# Achievement: I Remember My... (set an avatar)
-	if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-		AchievementManager.unlock_achievement("i_remember_my")
+	achievement_unlock("i_remember_my")
 
 func increment_bonus_spins() -> void:
 	player_data["bonus_spins"] = int(player_data.get("bonus_spins", 0)) + 1
-	if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-		AchievementManager.progress_achievement("frequent_flyer", 1)
-		if player_data["bonus_spins"] >= 5:
-			AchievementManager.unlock_achievement("frequent_flyer")
+	achievement_progress("frequent_flyer", 1)
+	if player_data["bonus_spins"] >= 5:
+		achievement_unlock("frequent_flyer")
 	save_player_data()
 
 func increment_broken_sunglasses() -> void:
 	player_data["broken_sunglasses"] = int(player_data.get("broken_sunglasses", 0)) + 1
 	save_player_data()
+
+# Safe Achievement helpers
+func achievement_unlock(id: String) -> void:
+	if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
+		if AchievementManager.has_method("unlock_achievement"):
+			AchievementManager.unlock_achievement(id)
+
+func achievement_progress(id: String, amount: int) -> void:
+	if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
+		if AchievementManager.has_method("progress_achievement"):
+			AchievementManager.progress_achievement(id, amount)
 
 # MEANER METER API
 func get_meaner_meter_current() -> int:

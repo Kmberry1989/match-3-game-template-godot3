@@ -574,8 +574,8 @@ func spawn_wildcard_safely() -> bool:
 			# Safe — keep wildcard and play feedback
 			if AudioManager != null:
 				AudioManager.play_sound("wildcard_spawn")
-			if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-				AchievementManager.unlock_achievement("justify_the_means")
+			if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+				PlayerManager.achievement_unlock("justify_the_means")
 			return true
 	# No safe spot found
 	return false
@@ -679,8 +679,8 @@ func destroy_matches():
 			else:
 				WebsocketClient.send_game_event("score", {"delta": points_earned})
 		# Achievement: Beginner's Luck (first match)
-		if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-			AchievementManager.unlock_achievement("beginners_luck")
+		if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+			PlayerManager.achievement_unlock("beginners_luck")
 		if match_count >= 5:
 			AudioManager.play_sound("match_fanfare")
 		elif match_count == 4:
@@ -957,8 +957,8 @@ func _apply_specials_and_collect(groups: Array) -> Array:
 				if AudioManager != null:
 					AudioManager.play_sound("wildcard_spawn")
 			# Achievement: Justify the Means (create wildcard)
-			if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-				AchievementManager.unlock_achievement("justify_the_means")
+			if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+				PlayerManager.achievement_unlock("justify_the_means")
 			excluded_positions.append(p)
 			# Match the rest of the run
 			for p2 in pos:
@@ -985,8 +985,8 @@ func _apply_specials_and_collect(groups: Array) -> Array:
 			if AudioManager != null:
 				AudioManager.play_sound("line_clear")
 			# Achievement: On the Ball (clear a 4-in-a-row)
-			if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-				AchievementManager.unlock_achievement("on_the_ball")
+			if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+				PlayerManager.achievement_unlock("on_the_ball")
 		else:
 			# Standard triple (or larger) – match all in this run
 			for p3 in pos:

@@ -329,8 +329,8 @@ func _evaluate_cascade_result() -> void:
 		if a == SymbolId.FREE_SPIN:
 			wants_spin_again = true
 		# Achievement: One Win Ever
-		if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-			AchievementManager.unlock_achievement("one_win_ever")
+		if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+			PlayerManager.achievement_unlock("one_win_ever")
 	elif a == b or b == c or a == c:
 		# 2 of a kind
 		var sym2: int = _majority_symbol(ids)
@@ -342,8 +342,8 @@ func _evaluate_cascade_result() -> void:
 			AudioManager.play_sound("slot_win")
 		_confetti_burst_from(mask, 0.6)
 		# Achievement: One Win Ever
-		if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-			AchievementManager.unlock_achievement("one_win_ever")
+		if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+			PlayerManager.achievement_unlock("one_win_ever")
 	else:
 		msg = _apply_payout_mixed()
 		if AudioManager != null:

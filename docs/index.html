@@ -1,136 +1,33 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="format-detection" content="telephone=no" />
     <title>Meaner Matcher</title>
-
-    <!-- Optional extra head content from export preset -->
-    <link id='-gd-engine-icon' rel='icon' type='image/png' href='index.icon.png' />
-<link rel='apple-touch-icon' href='index.apple-touch-icon.png'/>
-
-
     <style>
-      /* Base */
-      html, body {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        background: #000;
-        overscroll-behavior: none;
-        -webkit-touch-callout: none;
-        -webkit-text-size-adjust: none;
-        -webkit-user-select: none;
-        user-select: none;
-      }
-
-      /* Loader styles (mirrors Godot defaults) */
-      .godot {
-        font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-        color: #e0e0e0;
-        background-color: #3b3943;
-        background-image: linear-gradient(to bottom, #403e48, #35333c);
-        border: 1px solid #45434e;
-        box-shadow: 0 0 1px 1px #2f2d35;
-      }
-
-      #status {
-        position: absolute;
-        left: 0; top: 0; right: 0; bottom: 0;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        visibility: hidden;
-      }
-      #status-progress {
-        width: 366px; height: 7px;
-        background-color: #38363A;
-        border: 1px solid #444246; padding: 1px;
-        box-shadow: 0 0 2px 1px #1B1C22; border-radius: 2px;
-        visibility: visible;
-      }
-      @media only screen and (orientation:portrait) { #status-progress { width: 61.8%; } }
-      #status-progress-inner {
-        height: 100%; width: 0; box-sizing: border-box;
-        transition: width 0.5s linear;
-        background-color: #202020; border: 1px solid #222223;
-        box-shadow: 0 0 1px 1px #27282E; border-radius: 3px;
-      }
-      #status-indeterminate { height: 42px; visibility: visible; position: relative; }
-      #status-indeterminate > div {
-        width: 4.5px; height: 0; border-style: solid; border-width: 9px 3px 0 3px;
-        border-color: #2b2b2b transparent transparent transparent;
-        transform-origin: center 21px; position: absolute;
-      }
-      #status-indeterminate > div:nth-child(1) { transform: rotate( 22.5deg); }
-      #status-indeterminate > div:nth-child(2) { transform: rotate( 67.5deg); }
-      #status-indeterminate > div:nth-child(3) { transform: rotate(112.5deg); }
-      #status-indeterminate > div:nth-child(4) { transform: rotate(157.5deg); }
-      #status-indeterminate > div:nth-child(5) { transform: rotate(202.5deg); }
-      #status-indeterminate > div:nth-child(6) { transform: rotate(247.5deg); }
-      #status-indeterminate > div:nth-child(7) { transform: rotate(292.5deg); }
-      #status-indeterminate > div:nth-child(8) { transform: rotate(337.5deg); }
-
-      /* Canvas full-viewport + safe areas */
-      #canvas {
-        position: fixed;
-        left: 0; top: 0; width: 100vw; height: 100vh;
-        padding-top: env(safe-area-inset-top);
-        padding-right: env(safe-area-inset-right);
-        padding-bottom: env(safe-area-inset-bottom);
-        padding-left: env(safe-area-inset-left);
-        touch-action: none;
-        display: block; margin: 0; color: white;
-      }
-      #canvas:focus { outline: none; }
-
-      @supports (-webkit-touch-callout: none) {
-        #canvas { height: -webkit-fill-available; }
-        html, body { height: -webkit-fill-available; }
-      }
+      html, body { margin:0; padding:0; background:#000; height:100%; }
+      #canvas { width:100vw; height:100vh; touch-action: manipulation; }
     </style>
-
-    <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
-    <link rel="apple-touch-icon" href="index.apple-touch-icon.png" />
-
-    <script>
-      // Dynamic viewport height fix for Mobile Safari (toolbar show/hide)
-      (function () {
-        function setVH() {
-          var vh = window.innerHeight * 0.01;
-          document.documentElement.style.setProperty('--vh', vh + 'px');
-          var c = document.getElementById('canvas');
-          if (c) { c.style.height = 'calc(var(--vh, 1vh) * 100)'; }
-        }
-        window.addEventListener('resize', setVH);
-        window.addEventListener('orientationchange', setVH);
-        window.addEventListener('load', setVH);
-        setVH();
-      })();
-    </script>
   </head>
   <body>
-    <!-- Loading UI (same IDs the engine expects) -->
-    <div id="status">
-      <div id="status-progress" class="godot"><div id="status-progress-inner"></div></div>
-      <div id="status-indeterminate" class="godot">
-        <div></div><div></div><div></div><div></div>
-        <div></div><div></div><div></div><div></div>
-      </div>
-      <div id="status-notice" class="godot"></div>
-    </div>
-
-    <!-- Engine canvas (injected or generated by placeholder) -->
-    $GODOT_CANVAS
-
-    <!-- Engine loader and start script -->
-    $GODOT_JS
+    <canvas id="canvas"></canvas>
+    <script>
+      // iOS Safari: prevent elastic scroll and double-tap zoom quirks
+      document.addEventListener('gesturestart', function(e){ e.preventDefault(); }, { passive: false });
+      document.addEventListener('dblclick', function(e){ e.preventDefault(); }, { passive: false });
+      // Auto-resume WebAudio on first user interaction
+      function unlockAudio(){
+        try{
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if(!AC) return;
+          if(!window.godotAudioContext) window.godotAudioContext = new AC();
+          var ctx = window.godotAudioContext; if(ctx && ctx.state==='suspended') ctx.resume();
+        }catch(e){}
+      }
+      ['touchstart','mousedown','keydown'].forEach(function(ev){ window.addEventListener(ev, unlockAudio, { once:true }); });
+    </script>
   </body>
-  
 </html>
-
 

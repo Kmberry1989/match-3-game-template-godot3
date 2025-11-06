@@ -172,7 +172,7 @@ _global_script_class_icons={
 
 config/name="Meaner Matcher"
 run/main_scene="res://Scenes/Login.tscn"
-boot_splash/show_image=false
+boot_splash/image="res://Assets/Visuals/meanermen.png"
 config/icon="res://icon.png"
 
 [autoload]
@@ -202,7 +202,7 @@ window/stretch/aspect="keep"
 
 [editor_plugins]
 
-enabled=PoolStringArray(  )
+enabled=PoolStringArray( "res://addons/SimpleMultiplayer/plugin.cfg", "res://addons/godot-firebase/plugin.cfg", "res://addons/http-sse-client/plugin.cfg" )
 
 [gui]
 
