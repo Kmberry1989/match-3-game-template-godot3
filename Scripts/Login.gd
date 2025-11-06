@@ -7,6 +7,9 @@ onready var remember_check = $CenterContainer/VBoxContainer/RememberCheck
 onready var status_label = $CenterContainer/VBoxContainer/StatusLabel
 onready var cancel_button = $CenterContainer/VBoxContainer/CancelButton
 onready var firebase = get_node_or_null("/root/Firebase")
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+onready var SaveManager = get_node_or_null("/root/SaveManager")
 
 var auth_in_progress = false
 var cancel_requested = false

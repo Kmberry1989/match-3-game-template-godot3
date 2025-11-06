@@ -3,6 +3,8 @@ extends Node2D
 enum {wait, move}
 var state: int
 
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+
 export var width: int
 export var height: int
 export var offset: int
@@ -14,6 +16,9 @@ export var AUTO_RESHUFFLE: bool = true
 var x_start: float
 var y_start: float
 onready var game_ui = get_node("../GameUI")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+onready var WebsocketClient = get_node_or_null("/root/WebsocketClient")
+onready var MultiplayerManager = get_node_or_null("/root/MultiplayerManager")
 
 export var empty_spaces = PoolVector2Array()
 

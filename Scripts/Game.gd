@@ -1,6 +1,8 @@
 extends Node
 
 onready var trophy_notification = $CanvasLayer/TrophyNotification
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
 
 func _ready():
 	print("[Game.gd] _ready: Starting.")

@@ -8,6 +8,7 @@ onready var btn_ready = $Panel/VBox/Buttons/Ready
 onready var btn_start = $Panel/VBox/Buttons/Start
 onready var mode_opt = $Panel/VBox/ModeHBox/Mode
 onready var target_spin = $Panel/VBox/TargetHBox/Target
+onready var WebsocketClient = get_node_or_null("/root/WebsocketClient")
 
 var _joined = false
 var _finding_match = false

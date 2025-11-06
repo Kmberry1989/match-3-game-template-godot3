@@ -3,6 +3,9 @@ extends Control
 var status_label
 var offline_button
 var profile_button
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+onready var MultiplayerManager = get_node_or_null("/root/MultiplayerManager")
 var showcase_button
 var shop_button
 var logout_button

@@ -3,6 +3,8 @@ extends Node2D
 var _is_local: bool = false
 var _speed: float = 240.0
 
+onready var WebsocketClient = get_node_or_null("/root/WebsocketClient")
+
 func set_is_local(v: bool) -> void:
     _is_local = v
     # Tint local differently

@@ -3,6 +3,9 @@ class_name BonusSlotMachine
 
 signal finished
 
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+
 const SYMBOL_SIZE: Vector2 = Vector2(320, 320)
 const SYMBOL_DIR: String = "res://Assets/BonusSlot"
 # Preload textures in enum order: COIN, XP, WILDCARD, ROW_CLEAR, COL_CLEAR, MULT2X, MULT3X, FREE_SPIN

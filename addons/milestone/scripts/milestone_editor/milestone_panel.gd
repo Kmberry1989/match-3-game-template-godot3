@@ -161,14 +161,15 @@ func comparator(a: String, b: String) -> bool:
 		var ca = chunks_a[i]
 		var cb = chunks_b[i]
 
-		if ca.is_valid_int() and cb.is_valid_int():
+		# Godot 3 compatibility: String.is_valid_integer() instead of is_valid_int()
+		if ca.is_valid_integer() and cb.is_valid_integer():
 			var na = int(ca)
 			var nb = int(cb)
 			if na != nb:
 				return na < nb
-		elif ca.is_valid_int():
+		elif ca.is_valid_integer():
 			return true
-		elif cb.is_valid_int():
+		elif cb.is_valid_integer():
 			return false
 		elif ca != cb:
 			return ca < cb

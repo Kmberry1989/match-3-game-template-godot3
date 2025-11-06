@@ -1,6 +1,8 @@
 extends Node
 
 onready var firebase = get_node_or_null("/root/Firebase")
+onready var SaveManager = get_node_or_null("/root/SaveManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
 
 signal level_up(new_level)
 signal frame_changed(new_frame)

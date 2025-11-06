@@ -2,6 +2,8 @@ extends Control
 
 signal spin_finished
 
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+
 export var images = []
 export var rows_visible: int = 3
 export var tile_size = Vector2(250, 250)

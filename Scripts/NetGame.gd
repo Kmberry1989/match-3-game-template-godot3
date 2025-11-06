@@ -9,6 +9,9 @@ var _team_score: int = 0
 var _hud: Control = null
 var _label: Label = null
 
+onready var WebsocketClient = get_node_or_null("/root/WebsocketClient")
+onready var MultiplayerManager = get_node_or_null("/root/MultiplayerManager")
+
 func _ready() -> void:
 	# Pull session config from MultiplayerManager (autoload)
 	if Engine.has_singleton("MultiplayerManager") or (typeof(MultiplayerManager) != TYPE_NIL):

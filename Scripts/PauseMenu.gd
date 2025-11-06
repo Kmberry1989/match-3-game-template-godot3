@@ -13,6 +13,9 @@ onready var music_percent = $Center/VBox/MusicVolume/MusicPercent
 onready var sfx_slider = $Center/VBox/SfxVolume/SfxSlider
 onready var sfx_percent = $Center/VBox/SfxVolume/SfxPercent
 
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+
 const PRICE_FRAME = 10
 const PRICE_BG = 20
 
@@ -73,7 +76,8 @@ func _populate_frame_shop():
 		if not dir.current_is_dir():
 			if file_name.begins_with("avatar_frame_") and file_name.ends_with(".png"):
 				var num_str = file_name.trim_prefix("avatar_frame_").trim_suffix(".png")
-				if num_str.is_valid_int():
+				# Godot 3: use is_valid_integer() instead of Godot 4's is_valid_int()
+				if num_str.is_valid_integer():
 					var n = int(num_str)
 					if n >= 2:
 						frames.append(n)
