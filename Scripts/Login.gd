@@ -99,8 +99,9 @@ func _on_login_pressed():
 	print("[Login.gd] _on_login_pressed: Player data saved.")
 
 	if not PlayerManager.player_data.has("avatar"):
-		print("[Login.gd] _on_login_pressed: No avatar found, prompting for one.")
-		_prompt_for_avatar()
+		print("[Login.gd] _on_login_pressed: No avatar found, skipping avatar selection.")
+		_on_avatar_processed(null)
+		return
 	else:
 		print("[Login.gd] _on_login_pressed: Avatar found, changing to Menu scene.")
 		get_tree().change_scene("res://Scenes/Menu.tscn")
@@ -127,8 +128,9 @@ func _on_authentication_succeeded(auth_data):
 	print("[Login.gd] _on_authentication_succeeded: Player data loaded.")
 
 	if not PlayerManager.player_data.has("avatar"):
-		print("[Login.gd] _on_authentication_succeeded: No avatar found, prompting for one.")
-		_prompt_for_avatar()
+		print("[Login.gd] _on_authentication_succeeded: No avatar found, skipping avatar selection.")
+		_on_avatar_processed(null)
+		return
 	else:
 		print("[Login.gd] _on_authentication_succeeded: Avatar found, changing to Menu scene.")
 		get_tree().change_scene("res://Scenes/Menu.tscn")
