@@ -70,9 +70,9 @@ margin_bottom = 112.0
 align = 1
 
 [node name="Canyou" type="TextureRect" parent="."]
-margin_left = 84.0
+margin_left = 87.0
 margin_top = 600.0
-margin_right = 561.0
+margin_right = 564.0
 margin_bottom = 804.0
 rect_scale = Vector2( 0.7924, 0.504481 )
 texture = ExtResource( 3 )
