@@ -17,10 +17,13 @@ signal match_faded(global_pos, color_name)
 var pulse_tween = null
 var float_tween = null
 var shadow = null
+var glasses_overlay = null
+var has_glasses = false
 var jail_overlay: Sprite = null
 var is_arrested: bool = false
 var wildcard_glow: Sprite = null
 var wildcard_glow_tween = null
+var jailed_scale_mult: float = 1.0
 
 # Whether an XP orb has already been spawned for this dot in the current match.
 var orb_spawned = false
@@ -230,6 +233,36 @@ func reset_to_normal_state():
 	if is_wildcard:
 		return
 	set_normal_texture()
+
+func apply_glasses_overlay() -> void:
+	has_glasses = true
+	if glasses_overlay == null:
+		glasses_overlay = Sprite.new()
+		glasses_overlay.centered = true
+		var tex = load("res://Assets/Visuals/avatar_glasses.png")
+		if tex is Texture:
+			glasses_overlay.texture = tex
+		glasses_overlay.z_index = 6
+		add_child(glasses_overlay)
+	# Animated introduction: quick fade/scale pop and tiny wiggle
+	glasses_overlay.modulate.a = 0.0
+	glasses_overlay.scale = sprite.scale * 0.4
+	var tw = get_tree().create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(glasses_overlay, "modulate:a", 1.0, 0.18)
+	tw.tween_property(glasses_overlay, "scale", sprite.scale * 1.15, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(glasses_overlay, "rotation_degrees", 6.0, 0.09)
+	tw.tween_property(glasses_overlay, "rotation_degrees", -4.0, 0.08)
+	tw.tween_property(glasses_overlay, "rotation_degrees", 0.0, 0.07)
+	# Ensure final alignment
+	var tw2 = get_tree().create_tween()
+	tw2.tween_property(glasses_overlay, "scale", sprite.scale, 0.1)
+
+func clear_glasses_overlay() -> void:
+	has_glasses = false
+	if glasses_overlay != null and is_instance_valid(glasses_overlay):
+		glasses_overlay.queue_free()
+	glasses_overlay = null
 	_stop_wildcard_glow()
 
 func setup_blink_timer():
@@ -290,24 +323,54 @@ func start_floating():
 	float_tween.start()
 	float_tween.connect("tween_all_completed", self, "start_floating")
 
-func start_pulsing():
+func start_pulsing(sync_pulse = true):
 	if pulse_tween:
 		pulse_tween.stop_all()
+		if is_instance_valid(pulse_tween):
+			pulse_tween.queue_free()
+		pulse_tween = null
 
 	var pulse_duration = color_to_pulse_duration.get(color, 1.5) # Default to 1.5 if color not found
 
+	# Smoothly align to the baseline before starting the synchronized loop
+	if sync_pulse:
+		var align = Tween.new()
+		add_child(align)
+		var target_min = PULSE_SCALE_MIN * scale_multiplier * jailed_scale_mult
+		align.interpolate_property(sprite, "scale", sprite.scale, target_min, 0.12, Tween.TRANS_SINE, Tween.EASE_OUT)
+		if jail_overlay != null:
+			align.interpolate_property(jail_overlay, "scale", jail_overlay.scale, target_min, 0.12, Tween.TRANS_SINE, Tween.EASE_OUT)
+		if wildcard_glow != null:
+			align.interpolate_property(wildcard_glow, "scale", wildcard_glow.scale, target_min * 1.3, 0.12, Tween.TRANS_SINE, Tween.EASE_OUT)
+		align.start()
+		align.connect("tween_all_completed", self, "_do_pulse_cycle", [pulse_duration])
+	else:
+		_do_pulse_cycle(pulse_duration)
+
+func _start_pulsing_no_sync():
+	start_pulsing(false)
+
+func _do_pulse_cycle(pulse_duration):
+	if pulse_tween:
+		pulse_tween.stop_all()
+		if is_instance_valid(pulse_tween):
+			pulse_tween.queue_free()
+		pulse_tween = null
 	pulse_tween = Tween.new()
 	add_child(pulse_tween)
-	pulse_tween.interpolate_property(sprite, "scale", PULSE_SCALE_MIN * scale_multiplier, PULSE_SCALE_MAX * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
-	pulse_tween.interpolate_property(sprite, "scale", PULSE_SCALE_MAX * scale_multiplier, PULSE_SCALE_MIN * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
+	pulse_tween.interpolate_property(sprite, "scale", PULSE_SCALE_MIN * scale_multiplier * jailed_scale_mult, PULSE_SCALE_MAX * scale_multiplier * jailed_scale_mult, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+	pulse_tween.interpolate_property(sprite, "scale", PULSE_SCALE_MAX * scale_multiplier * jailed_scale_mult, PULSE_SCALE_MIN * scale_multiplier * jailed_scale_mult, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
 	if jail_overlay != null:
-		pulse_tween.interpolate_property(jail_overlay, "scale", PULSE_SCALE_MIN * scale_multiplier, PULSE_SCALE_MAX * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
-		pulse_tween.interpolate_property(jail_overlay, "scale", PULSE_SCALE_MAX * scale_multiplier, PULSE_SCALE_MIN * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
+		pulse_tween.interpolate_property(jail_overlay, "scale", PULSE_SCALE_MIN * scale_multiplier * jailed_scale_mult, PULSE_SCALE_MAX * scale_multiplier * jailed_scale_mult, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+		pulse_tween.interpolate_property(jail_overlay, "scale", PULSE_SCALE_MAX * scale_multiplier * jailed_scale_mult, PULSE_SCALE_MIN * scale_multiplier * jailed_scale_mult, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
+	if glasses_overlay != null:
+		pulse_tween.interpolate_property(glasses_overlay, "scale", PULSE_SCALE_MIN * scale_multiplier, PULSE_SCALE_MAX * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+		pulse_tween.interpolate_property(glasses_overlay, "scale", PULSE_SCALE_MAX * scale_multiplier, PULSE_SCALE_MIN * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
 	if wildcard_glow != null:
 		pulse_tween.interpolate_property(wildcard_glow, "scale", PULSE_SCALE_MIN * scale_multiplier * 1.2, PULSE_SCALE_MAX * scale_multiplier * 1.4, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
 		pulse_tween.interpolate_property(wildcard_glow, "scale", PULSE_SCALE_MAX * scale_multiplier * 1.4, PULSE_SCALE_MIN * scale_multiplier * 1.2, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
 	pulse_tween.start()
-	pulse_tween.connect("tween_all_completed", self, "start_pulsing")
+	pulse_tween.connect("tween_all_completed", self, "_start_pulsing_no_sync")
 
 # Rainbow glow for wildcards
 func _ensure_wildcard_glow() -> void:
@@ -341,7 +404,12 @@ func _start_wildcard_glow() -> void:
 
 func _stop_wildcard_glow() -> void:
 	if wildcard_glow_tween != null:
-		wildcard_glow_tween.kill()
+		if wildcard_glow_tween.has_method("kill"):
+			wildcard_glow_tween.kill()
+		elif wildcard_glow_tween.has_method("stop_all"):
+			wildcard_glow_tween.stop_all()
+		if is_instance_valid(wildcard_glow_tween):
+			wildcard_glow_tween.queue_free()
 		wildcard_glow_tween = null
 	if wildcard_glow != null and is_instance_valid(wildcard_glow):
 		wildcard_glow.queue_free()
@@ -358,7 +426,13 @@ func apply_jail_overlay(stage: int) -> void:
 	var tex = load(tex_path)
 	if tex is Texture:
 		jail_overlay.texture = tex
+	# Ensure overlay is above the dot and both are scaled down to 0.75 while jailed
+	var behind_z = int(jail_overlay.z_index) - 1
+	if sprite is CanvasItem:
+		sprite.z_index = behind_z
+	jailed_scale_mult = 0.75
 	jail_overlay.scale = sprite.scale
+	start_pulsing(true)
 
 func update_jail_overlay(stage: int) -> void:
 	if jail_overlay == null:
@@ -374,11 +448,16 @@ func show_jailbreak_then_clear() -> void:
 	var tex = load("res://Assets/Visuals/avatar_jailbreak.png")
 	if tex is Texture:
 		jail_overlay.texture = tex
+	# Scale pop on break and fade away overlay
 	var t = get_tree().create_tween()
-	t.tween_property(jail_overlay, "modulate:a", 0.0, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	t.set_parallel(true)
+	t.tween_property(sprite, "scale", sprite.scale * 1.25, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(jail_overlay, "modulate:a", 0.0, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	yield(t, "finished")
 	clear_jail_overlay()
 	reset_to_normal_state()
+	# Remove this dot entirely after the break animation
+	queue_free()
 
 func clear_jail_overlay() -> void:
 	if jail_overlay != null:
@@ -386,6 +465,16 @@ func clear_jail_overlay() -> void:
 			jail_overlay.queue_free()
 	jail_overlay = null
 	is_arrested = false
+	jailed_scale_mult = 1.0
+
+func play_shake(duration := 0.18, magnitude := 6.0) -> void:
+	# Brief positional shake around current position
+	var base_pos = position
+	var tw = get_tree().create_tween()
+	tw.tween_property(self, "position", base_pos + Vector2(magnitude, 0), duration * 0.25)
+	tw.tween_property(self, "position", base_pos + Vector2(-magnitude, 0), duration * 0.25)
+	tw.tween_property(self, "position", base_pos + Vector2(0, magnitude), duration * 0.25)
+	tw.tween_property(self, "position", base_pos, duration * 0.25)
 
 func _on_blink_timer_timeout():
 	if animation_state == "normal":

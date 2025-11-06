@@ -1,12 +1,18 @@
 extends Control
 
+# Visual overlays can make the board appear "shrunk" at the edges on some displays.
+# Toggle this to enable/disable the decorative gold border overlay.
+const GOLD_BORDER_ENABLED := false
+
 onready var player_name_label = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/PlayerNameLabel
 onready var level_label = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/LevelLabel
 onready var xp_label = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/XpLabel
 onready var coins_label = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/CoinsLabel
 # Pause button is looked up safely at runtime to avoid errors when missing
 onready var frame_sprite = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/AvatarFrame2
+onready var player_avatar = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/PlayerAvatar
 var _avatar_photo = null
+var _avatar_nudged: bool = false
 
 # MEANER METER UI reference
 var _meaner_bar = null
@@ -21,8 +27,9 @@ func _ready():
 	PlayerManager.connect("frame_changed", self, "_on_frame_changed")
 	_on_coins_changed(PlayerManager.get_coins())
 	_apply_current_frame()
-	# Add a subtle gold border overlay around the screen while in-game
-	_add_gold_border()
+	# Optional decorative overlay; disabled by default to avoid affecting perceived grid area
+	if GOLD_BORDER_ENABLED:
+		_add_gold_border()
 	# Add MEANER METER UI and connect signals
 	_add_meaner_meter_ui()
 	if not PlayerManager.is_connected("meaner_meter_changed", self, "_on_meaner_meter_changed"):
@@ -67,16 +74,43 @@ func _apply_current_frame():
 			frame_sprite.set_z_index(1000)
 		_fit_sprite_to_height(frame_sprite, 160.0)
 		_update_avatar_photo()
+		_ensure_avatar_layering()
 
 func _frame_to_texture_path(frame_name):
-	if frame_name == "default":
-		# Use an existing avatar frame as the default visual now that frame_standard.png is removed
-		return "res://Assets/Visuals/avatar_frame_2.png"
-	# e.g., frame_2 -> avatar_frame_2.png
-	return "res://Assets/Visuals/" + "avatar_" + frame_name + ".png"
+	var base = "res://Assets/Visuals/"
+	# Discover available frames automatically
+	var available = []
+	var dir = Directory.new()
+	if dir.open(base) == OK:
+		dir.list_dir_begin(true, true)
+		var fn = dir.get_next()
+		while fn != "":
+			if not dir.current_is_dir():
+				var lower = fn.to_lower()
+				if lower.begins_with("avatar_frame_") and lower.ends_with(".png"):
+					available.append(lower)
+			fn = dir.get_next()
+		dir.list_dir_end()
+	available.sort()
+	if frame_name == "default" and available.size() > 0:
+		return base + available[0]
+	var target = ""
+	if frame_name.begins_with("avatar_frame_"):
+		target = frame_name + ".png"
+	elif frame_name.begins_with("frame_"):
+		target = "avatar_" + frame_name + ".png" # frame_2 -> avatar_frame_2.png
+	else:
+		target = "avatar_frame_" + frame_name + ".png"
+	if available.has(target.to_lower()):
+		return base + target
+	# Fallbacks
+	var fallback = base + "avatar_frame_2.png"
+	if ResourceLoader.exists(fallback):
+		return fallback
+	return base + target
 
 func _fit_sprite_to_height(sprite, target_h):
-	if sprite.texture == null:
+	if sprite == null or sprite.texture == null:
 		return
 	var tex = sprite.texture
 	var h = float(tex.get_height())
@@ -86,68 +120,52 @@ func _fit_sprite_to_height(sprite, target_h):
 	var sf = target_h / h
 	if sf > 1.0:
 		sf = 1.0
-	# Sprite (Node2D) supports scale; Control/TextureRect does not
+	# Sprite (Node2D) supports scale; Control/TextureRect uses rect size and stretch
 	if sprite is Sprite:
 		sprite.scale = Vector2(sf, sf)
 	elif sprite is TextureRect:
-		var new_size = Vector2(tex.get_width() * sf, tex.get_height() * sf)
-		# Ensure the texture scales with the control's rect
+		# Force a 150x150 square area for the avatar
 		sprite.expand = true
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		# Inform layout of desired size and set the rect directly
-		sprite.rect_min_size = new_size
-		sprite.rect_size = new_size
+		sprite.rect_min_size = Vector2(150, 150)
+		sprite.rect_size = Vector2(150, 150)
 
 func _ensure_avatar_photo_node():
-	if _avatar_photo != null and is_instance_valid(_avatar_photo):
+	# Use the existing PlayerAvatar TextureRect from the scene
+	if player_avatar != null and is_instance_valid(player_avatar):
+		_avatar_photo = player_avatar
+		_avatar_photo.expand = true
+		_avatar_photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_avatar_photo.rect_min_size = Vector2(150, 150)
+		_avatar_photo.rect_size = Vector2(150, 150)
+		_ensure_avatar_layering()
 		return
-	var parent_node = frame_sprite.get_parent()
-	if parent_node == null:
-		return
-	var existing = parent_node.get_node_or_null("AvatarPhoto")
-	if existing != null:
-		if existing is TextureRect:
-			_avatar_photo = existing
-			return
-		# Replace any legacy Sprite with a TextureRect for UI consistency
-		if existing is Sprite or existing is Node2D:
-			existing.queue_free()
-	# Use TextureRect so it lives comfortably in a Control-based UI tree
-	_avatar_photo = TextureRect.new()
-	_avatar_photo.name = "AvatarPhoto"
-	# Match anchors/margins to the frame so it overlays perfectly
-	if frame_sprite is Control:
-		_avatar_photo.anchor_left = frame_sprite.anchor_left
-		_avatar_photo.anchor_top = frame_sprite.anchor_top
-		_avatar_photo.anchor_right = frame_sprite.anchor_right
-		_avatar_photo.anchor_bottom = frame_sprite.anchor_bottom
-		_avatar_photo.margin_left = frame_sprite.margin_left
-		_avatar_photo.margin_top = frame_sprite.margin_top
-		_avatar_photo.margin_right = frame_sprite.margin_right
-		_avatar_photo.margin_bottom = frame_sprite.margin_bottom
-	# Ensure avatar image scales to its rect and keeps aspect
-	_avatar_photo.expand = true
-	_avatar_photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	parent_node.add_child(_avatar_photo)
-	# Try to place just behind the frame either by z-index or sibling order
-	var placed = false
-	if _avatar_photo.has_method("set_z_index") and frame_sprite != null and frame_sprite.has_method("get_z_index"):
-		var base_z = frame_sprite.get_z_index()
-		_avatar_photo.set_z_index(max(base_z - 1, -100))
-		placed = true
-	if not placed and frame_sprite != null:
-		# Fall back to sibling order: move avatar to the same index as frame so it's drawn before it
-		var idx = frame_sprite.get_index()
-		parent_node.move_child(_avatar_photo, idx)
 
 func _update_avatar_photo():
 	_ensure_avatar_photo_node()
 	if _avatar_photo == null:
 		return
-	var path = "user://avatars/" + PlayerManager.get_player_name() + ".png"
 	var tex = null
-	if ResourceLoader.exists(path):
-		tex = load(path)
+	# Preferred: explicit avatar path saved in player data
+	if typeof(PlayerManager.player_data) == TYPE_DICTIONARY and PlayerManager.player_data.has("avatar"):
+		var saved_path = str(PlayerManager.player_data.get("avatar"))
+		if ResourceLoader.exists(saved_path):
+			tex = load(saved_path)
+	# Fallback: per-user avatar file
+	if tex == null:
+		var path1 = "user://avatars/" + PlayerManager.get_player_name() + ".png"
+		if ResourceLoader.exists(path1):
+			tex = load(path1)
+	# Fallback: legacy single avatar path
+	if tex == null:
+		var path2 = "user://avatar.png"
+		if ResourceLoader.exists(path2):
+			tex = load(path2)
+	# Final fallback: default in-game avatar
+	if tex == null:
+		var fallback = "res://Assets/Dots/vickieavatar.png"
+		if ResourceLoader.exists(fallback):
+			tex = load(fallback)
 	_avatar_photo.texture = tex
 	if tex != null:
 		# Fit just inside the frame so it doesn't get blocked too much
@@ -155,6 +173,42 @@ func _update_avatar_photo():
 		_avatar_photo.visible = true
 	else:
 		_avatar_photo.visible = false
+	# Raise the avatar slightly within the frame (apply once)
+	_raise_avatar_by(10)
+
+func _ensure_avatar_layering() -> void:
+	# Ensure the avatar draws just beneath the frame and above other siblings
+	if _avatar_photo == null or frame_sprite == null:
+		return
+	var parent_node = frame_sprite.get_parent()
+	if parent_node == null:
+		return
+	# Prefer z_index where available
+	var set_ok = false
+	if _avatar_photo.has_method("set_z_index") and frame_sprite.has_method("get_z_index"):
+		var fz = int(frame_sprite.get_z_index())
+		_avatar_photo.set_z_index(max(fz - 1, -100))
+		set_ok = true
+	# Also adjust sibling order as a fallback so avatar is before frame (drawn underneath)
+	var f_idx = frame_sprite.get_index()
+	var a_idx = _avatar_photo.get_index()
+	if a_idx > f_idx:
+		parent_node.move_child(_avatar_photo, f_idx)
+	# Optionally raise both relative to other UI when z_index is unsupported
+	if not set_ok:
+		# Move frame to the end and avatar just before it
+		var last = parent_node.get_child_count() - 1
+		parent_node.move_child(frame_sprite, last)
+		parent_node.move_child(_avatar_photo, max(last - 1, 0))
+
+func _raise_avatar_by(pixels: int) -> void:
+	if _avatar_nudged:
+		return
+	if _avatar_photo != null and _avatar_photo is Control:
+		# Move up by reducing top/bottom margins equally to preserve height
+		_avatar_photo.margin_top -= pixels
+		_avatar_photo.margin_bottom -= pixels
+		_avatar_nudged = true
 
 func _on_pause_pressed():
 	var root = get_tree().get_current_scene()

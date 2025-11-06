@@ -86,6 +86,9 @@ var _arrested_dot = null
 var _arrest_stage: int = 0 # 3 -> 2 -> 1 -> 0 then jailbreak
 var _match_events: int = 0 # count of successful match resolutions
 var _siren_played: bool = false
+var _glasses_active: bool = false
+var _glasses_target = null
+var _matches_since_glasses: int = 0
 
 func _ready():
 	state = move
@@ -109,6 +112,11 @@ func _ready():
 		vp.connect("size_changed", self, "_on_viewport_size_changed")
 	all_dots = make_2d_array()
 	spawn_dots()
+	# Synchronize pulsing on initial spawn so all dots beat together
+	for i in range(width):
+		for j in range(height):
+			if all_dots[i][j] != null and all_dots[i][j].has_method("start_pulsing"):
+				all_dots[i][j].start_pulsing()
 	# Apply any pending bonus effects at stage start
 	_apply_pending_bonus()
 	# Optionally ensure the initial board always has at least one potential match
@@ -225,12 +233,14 @@ func spawn_dots():
 					dot_instance.queue_free()
 
 				var dot = dot_scene_to_use.instance()
-				dot.z_index = j
+				# Higher z for lower rows so bottom rows render on top
+				var base_z = height - j
+				dot.z_index = base_z
 				add_child(dot)
 				dot.position = grid_to_pixel(i, j)
 				all_dots[i][j] = dot
 				# Track base z for jailed layering
-				dot.set_meta("base_z", j)
+				dot.set_meta("base_z", base_z)
 				_apply_arrest_overlay_if_needed(dot)
 			
 func match_at(i, j, color):
@@ -280,11 +290,11 @@ func _input(event):
 				is_dragging = false
 				
 				var start_grid_pos = pixel_to_grid(drag_start_position.x, drag_start_position.y)
-	var basez = int(start_grid_pos.y)
-	if bool(dragged_dot.get("is_arrested") if dragged_dot.has_method("get") else false):
-		dragged_dot.z_index = basez - 1
-	else:
-		dragged_dot.z_index = basez # Restore z-index by row
+				var basez = int(height - start_grid_pos.y)
+				if dragged_dot != null and dragged_dot.has_method("get") and bool(dragged_dot.get("is_arrested")):
+					dragged_dot.z_index = basez - 1
+				else:
+					dragged_dot.z_index = basez # Restore z-index by row
 				var end_grid_pos = pixel_to_grid(event.position.x, event.position.y)
 				
 				var difference = end_grid_pos - start_grid_pos
@@ -343,13 +353,13 @@ func swap_dots(column, row, direction) -> bool:
 	other_dot.move(grid_to_pixel(col, r))
 
 	# Recompute row-based z ordering for both, jailed goes under same row
-	var baseA = int(ny)
+	var baseA = int(height - ny)
 	first_dot.set_meta("base_z", baseA)
 	if bool(first_dot.get("is_arrested") if first_dot.has_method("get") else false):
 		first_dot.z_index = baseA - 1
 	else:
 		first_dot.z_index = baseA
-	var baseB = int(r)
+	var baseB = int(height - r)
 	other_dot.set_meta("base_z", baseB)
 	if bool(other_dot.get("is_arrested") if other_dot.has_method("get") else false):
 		other_dot.z_index = baseB - 1
@@ -482,13 +492,16 @@ func _update_arrest_overlays() -> void:
 		_arrested_dot.update_jail_overlay(_arrest_stage)
 
 func _jailbreak_release() -> void:
-	# Show jailbreak overlay and clear
-	for i in range(width):
-		for j in range(height):
-			var d = all_dots[i][j]
-			if d != null and String(d.color) == _arrested_color:
-				if d.has_method("show_jailbreak_then_clear"):
-					d.show_jailbreak_then_clear()
+	# Show jailbreak overlay and clear only the arrested dot
+	if _arrested_dot != null and _arrested_dot.has_method("show_jailbreak_then_clear"):
+		_arrested_dot.show_jailbreak_then_clear()
+		# Mark matched so the board clears it on the next pass and remove from matrix
+		_arrested_dot.matched = true
+		for ii in range(width):
+			for jj in range(height):
+				if all_dots[ii][jj] == _arrested_dot:
+					all_dots[ii][jj] = null
+					break
 	# Track stat
 	if PlayerManager != null and PlayerManager.has_method("increment_jailbreak_for_color"):
 		PlayerManager.increment_jailbreak_for_color(_arrested_color)
@@ -626,6 +639,8 @@ func destroy_matches():
 	var points_earned = 0
 	var match_center = Vector2.ZERO
 	var match_count = 0
+	var glasses_triggered: bool = false
+	var glasses_center: Vector2 = Vector2.ZERO
 	var colors_matched := {}
 	for i in range(width):
 		for j in range(height):
@@ -635,6 +650,11 @@ func destroy_matches():
 				match_center += all_dots[i][j].position
 				match_count += 1
 				colors_matched[all_dots[i][j].color] = true
+
+				# Detect sunglasses target matched
+				if all_dots[i][j].has_method("get") and bool(all_dots[i][j].get("has_glasses")):
+					glasses_triggered = true
+					glasses_center = all_dots[i][j].global_position
 				
 				# Instantiate original particles
 				var particles = match_particles.instance()
@@ -701,6 +721,12 @@ func destroy_matches():
 				match_label.global_position = screen_pos
 	
 	move_checked = true
+	if glasses_triggered:
+		# Break the sunglasses: clear board with special effect
+		_glasses_active = false
+		_glasses_target = null
+		_on_sunglasses_broken(glasses_center)
+		return
 	if was_matched:
 		collapse_timer.start()
 	else:
@@ -720,6 +746,9 @@ func destroy_matches():
 		_arrest_stage -= 1
 		if _arrest_stage > 0:
 			_update_arrest_overlays()
+			# Shake feedback on the arrested dot for each stage decrement
+			if _arrested_dot != null and _arrested_dot.has_method("play_shake"):
+				_arrested_dot.play_shake(0.18, 6.0)
 			if AudioManager != null:
 				AudioManager.play_sound("jail_progress")
 		else:
@@ -728,6 +757,10 @@ func destroy_matches():
 	# Deterministic trigger: every 20 successful match resolutions
 	if was_matched:
 		_match_events += 1
+		_matches_since_glasses += 1
+		if (_matches_since_glasses >= 25) and not _glasses_active:
+			_matches_since_glasses = 0
+			_spawn_glasses_on_random_dot()
 		if (_match_events % 20) == 0 and not _arrest_active:
 			var present: Array = []
 			for i in range(width):
@@ -738,7 +771,7 @@ func destroy_matches():
 			if present.size() > 0:
 				present.shuffle()
 				_trigger_arrest_event(String(present[0]))
-
+	
 func _dots_match(a, b) -> bool:
 	if a == null or b == null:
 		return false
@@ -748,6 +781,60 @@ func _dots_match(a, b) -> bool:
 	if b.has_method("set_wildcard") and b.get("is_wildcard"):
 		return true
 	return a.color == b.color
+
+func _spawn_glasses_on_random_dot() -> void:
+	var candidates: Array = []
+	for i in range(width):
+		for j in range(height):
+			var d = all_dots[i][j]
+			if d != null and d.has_method("apply_glasses_overlay"):
+				candidates.append(d)
+	if candidates.size() == 0:
+		return
+	candidates.shuffle()
+	var d0 = candidates[0]
+	d0.apply_glasses_overlay()
+	_glasses_active = true
+	_glasses_target = d0
+
+func _on_sunglasses_broken(center_pos: Vector2) -> void:
+	if AudioManager != null:
+		AudioManager.play_sound("clear_board")
+	if PlayerManager != null and PlayerManager.has_method("increment_broken_sunglasses"):
+		PlayerManager.increment_broken_sunglasses()
+	state = wait
+	# Radial fade/scale animation from the center
+	var tweens: Array = []
+	for i in range(width):
+		for j in range(height):
+			var d = all_dots[i][j]
+			if d == null:
+				continue
+			# distance-based delay
+			var dist = d.global_position.distance_to(center_pos)
+			var delay = clamp(dist / 600.0, 0.0, 0.5)
+			var t = get_tree().create_tween()
+			t.set_parallel(true)
+			t.tween_property(d, "scale", d.scale * 1.4, 0.25).set_delay(delay).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			t.tween_property(d, "modulate:a", 0.0, 0.25).set_delay(delay)
+			tweens.append(t)
+	if tweens.size() > 0:
+		yield(tweens.back(), "finished")
+	# Free all dots and respawn fresh board
+	for i in range(width):
+		for j in range(height):
+			if all_dots[i][j] != null:
+				all_dots[i][j].queue_free()
+				all_dots[i][j] = null
+	all_dots = make_2d_array()
+	spawn_dots()
+	# Re-sync pulses
+	for i in range(width):
+		for j in range(height):
+			if all_dots[i][j] != null and all_dots[i][j].has_method("start_pulsing"):
+				all_dots[i][j].start_pulsing()
+	yield(ensure_moves_available(), "completed")
+	state = move
 
 func _apply_pending_bonus() -> void:
 	if typeof(PlayerManager.player_data) != TYPE_DICTIONARY:
@@ -1004,7 +1091,7 @@ func collapse_columns():
 				for k in range(j + 1, height):
 					if all_dots[i][k] != null:
 						var d = all_dots[i][k]
-						var base = j
+						var base = height - j
 						d.set_meta("base_z", base)
 						# Keep jailed dots underneath within the row
 						if bool(d.get("is_arrested") if d.has_method("get") else false):

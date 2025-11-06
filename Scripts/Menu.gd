@@ -65,11 +65,12 @@ func _ready():
 	var hover_tex = load("res://Assets/Visuals/button_hover.svg")
 	var pressed_tex = load("res://Assets/Visuals/button_pressed.svg")
 
-	offline_button.set_normal_texture(normal_tex)
-	offline_button.set_pressed_texture(pressed_tex)
-	offline_button.set_hover_texture(hover_tex)
+	offline_button.set_normal_texture(load("res://Assets/Visuals/PLAY.png"))
+	offline_button.set_pressed_texture(load("res://Assets/Visuals/PLAY.png"))
+	offline_button.set_hover_texture(load("res://Assets/Visuals/PLAY.png"))
 	offline_button.connect("pressed", self, "_on_offline_button_pressed")
-	offline_button.rect_scale = Vector2(1.8, 1.8)
+	# Enlarge the entire button so its label scales up when no font is present
+	offline_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(offline_button)
 
 	var offline_label = Label.new()
@@ -84,14 +85,18 @@ func _ready():
 	offline_label.margin_bottom = 0
 	offline_label.align = Label.ALIGN_CENTER
 	offline_label.valign = Label.VALIGN_CENTER
-	# Keep label unscaled so it stays centered inside the button
+	# Keep centered inside the button; font size handled via _apply_big_font()
+	offline_label.align = Label.ALIGN_CENTER
+	offline_label.valign = Label.VALIGN_CENTER
+	_apply_big_font(offline_label, 56)
+	offline_label.visible = false
 	offline_button.add_child(offline_label)
 
-	profile_button.set_normal_texture(normal_tex)
-	profile_button.set_pressed_texture(pressed_tex)
-	profile_button.set_hover_texture(hover_tex)
+	profile_button.set_normal_texture(load("res://Assets/Visuals/PROFILE.png"))
+	profile_button.set_pressed_texture(load("res://Assets/Visuals/PROFILE.png"))
+	profile_button.set_hover_texture(load("res://Assets/Visuals/PROFILE.png"))
 	profile_button.connect("pressed", self, "_on_profile_button_pressed")
-	profile_button.rect_scale = Vector2(1.8, 1.8)
+	profile_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(profile_button)
 
 	var profile_label = Label.new()
@@ -106,14 +111,17 @@ func _ready():
 	profile_label.margin_bottom = 0
 	profile_label.align = Label.ALIGN_CENTER
 	profile_label.valign = Label.VALIGN_CENTER
-	# Keep label unscaled so it stays centered inside the button
+	profile_label.align = Label.ALIGN_CENTER
+	profile_label.valign = Label.VALIGN_CENTER
+	_apply_big_font(profile_label, 48)
+	profile_label.visible = false
 	profile_button.add_child(profile_label)
 
-	showcase_button.set_normal_texture(normal_tex)
-	showcase_button.set_pressed_texture(pressed_tex)
-	showcase_button.set_hover_texture(hover_tex)
+	showcase_button.set_normal_texture(load("res://Assets/Visuals/SHOWCASE.png"))
+	showcase_button.set_pressed_texture(load("res://Assets/Visuals/SHOWCASE.png"))
+	showcase_button.set_hover_texture(load("res://Assets/Visuals/SHOWCASE.png"))
 	showcase_button.connect("pressed", self, "_on_showcase_button_pressed")
-	showcase_button.rect_scale = Vector2(1.8, 1.8)
+	showcase_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(showcase_button)
 
 	var showcase_label = Label.new()
@@ -128,14 +136,17 @@ func _ready():
 	showcase_label.margin_bottom = 0
 	showcase_label.align = Label.ALIGN_CENTER
 	showcase_label.valign = Label.VALIGN_CENTER
-	# Keep label unscaled so it stays centered inside the button
+	showcase_label.align = Label.ALIGN_CENTER
+	showcase_label.valign = Label.VALIGN_CENTER
+	_apply_big_font(showcase_label, 48)
+	showcase_label.visible = false
 	showcase_button.add_child(showcase_label)
 
-	shop_button.set_normal_texture(normal_tex)
-	shop_button.set_pressed_texture(pressed_tex)
-	shop_button.set_hover_texture(hover_tex)
+	shop_button.set_normal_texture(load("res://Assets/Visuals/SHOP.png"))
+	shop_button.set_pressed_texture(load("res://Assets/Visuals/SHOP.png"))
+	shop_button.set_hover_texture(load("res://Assets/Visuals/SHOP.png"))
 	shop_button.connect("pressed", self, "_on_shop_button_pressed")
-	shop_button.rect_scale = Vector2(1.8, 1.8)
+	shop_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(shop_button)
 
 	var shop_label = Label.new()
@@ -150,14 +161,17 @@ func _ready():
 	shop_label.margin_bottom = 0
 	shop_label.align = Label.ALIGN_CENTER
 	shop_label.valign = Label.VALIGN_CENTER
-	# Keep label unscaled so it stays centered inside the button
+	shop_label.align = Label.ALIGN_CENTER
+	shop_label.valign = Label.VALIGN_CENTER
+	_apply_big_font(shop_label, 48)
+	shop_label.visible = false
 	shop_button.add_child(shop_label)
 
 	multiplayer_button.set_normal_texture(normal_tex)
 	multiplayer_button.set_pressed_texture(pressed_tex)
 	multiplayer_button.set_hover_texture(hover_tex)
 	multiplayer_button.connect("pressed", self, "_on_multiplayer_button_pressed")
-	multiplayer_button.rect_scale = Vector2(1.8, 1.8)
+	multiplayer_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(multiplayer_button)
 
 	var mp_label = Label.new()
@@ -172,7 +186,9 @@ func _ready():
 	mp_label.margin_bottom = 0
 	mp_label.align = Label.ALIGN_CENTER
 	mp_label.valign = Label.VALIGN_CENTER
-	# Keep label unscaled so it stays centered inside the button
+	mp_label.align = Label.ALIGN_CENTER
+	mp_label.valign = Label.VALIGN_CENTER
+	_apply_big_font(mp_label, 42)
 	multiplayer_button.add_child(mp_label)
 	# Hide multiplayer for this build
 	multiplayer_button.visible = false
@@ -181,7 +197,7 @@ func _ready():
 	logout_button.set_pressed_texture(pressed_tex)
 	logout_button.set_hover_texture(hover_tex)
 	logout_button.connect("pressed", self, "_on_logout_button_pressed")
-	logout_button.rect_scale = Vector2(1.8, 1.8)
+	logout_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(logout_button)
 
 	var logout_label = Label.new()
@@ -196,8 +212,12 @@ func _ready():
 	logout_label.margin_bottom = 0
 	logout_label.align = Label.ALIGN_CENTER
 	logout_label.valign = Label.VALIGN_CENTER
-	# Keep label unscaled so it stays centered inside the button
+	logout_label.align = Label.ALIGN_CENTER
+	logout_label.valign = Label.VALIGN_CENTER
+	_apply_big_font(logout_label, 42)
 	logout_button.add_child(logout_label)
+
+ 
 
 	_update_logout_visibility()
 
@@ -257,3 +277,37 @@ func _on_logout_button_pressed():
 	PlayerManager.player_uid = ""
 	get_tree().change_scene("res://Scenes/Login.tscn")
 
+func _apply_big_font(lbl: Label, size: int) -> void:
+	# Use a DynamicFont if one exists under Assets/Fonts; otherwise keep default theme
+	var base = "res://Assets/Fonts"
+	var font_path = ""
+	var preferred = [
+		base + "/Menu.ttf",
+		base + "/menu.ttf",
+		base + "/Menu.otf",
+		base + "/menu.otf"
+	]
+	for p in preferred:
+		if ResourceLoader.exists(p):
+			font_path = p
+			break
+	if font_path == "":
+		var dir = Directory.new()
+		if dir.open(base) == OK:
+			dir.list_dir_begin(true, true)
+			var fn = dir.get_next()
+			while fn != "":
+				if not dir.current_is_dir():
+					var lower = fn.to_lower()
+					if lower.ends_with(".ttf") or lower.ends_with(".otf"):
+						font_path = base + "/" + fn
+						break
+				fn = dir.get_next()
+			dir.list_dir_end()
+	if font_path != "":
+		var df = DynamicFont.new()
+		var dfd = DynamicFontData.new()
+		dfd.font_path = font_path
+		df.font_data = dfd
+		df.size = size
+		lbl.add_font_override("font", df)

@@ -1,0 +1,15 @@
+[remap]
+
+importer="ogg_vorbis"
+type="AudioStreamOGGVorbis"
+path="res://.import/jail_progress.ogg-608e1e24bfa9cdf15339fb6b4275ef85.oggstr"
+
+[deps]
+
+source_file="res://Assets/Sounds/jail_progress.ogg"
+dest_files=[ "res://.import/jail_progress.ogg-608e1e24bfa9cdf15339fb6b4275ef85.oggstr" ]
+
+[params]
+
+loop=true
+loop_offset=0

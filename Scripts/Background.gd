@@ -1,11 +1,6 @@
 extends TextureRect
 
-export(Array, Texture) var textures = [
-	preload("res://Assets/bg1.jpg"),
-	preload("res://Assets/bg2.jpg"),
-	preload("res://Assets/bg3.jpg"),
-	preload("res://Assets/bg4.jpg")
-]
+export(Array, Texture) var textures = []
 
 export(float) var fade_duration = 1.0
 export(float) var hold_duration = 5.0
@@ -16,9 +11,45 @@ var tween = null
 var time = 0.0
 
 func _ready():
-	texture = textures[current_texture_index]
-	modulate = Color(1, 1, 1, 0) # Start transparent for the first fade-in
-	cycle_background()
+    # Discover any bg*.jpg files in Assets and build a playlist
+    var found = []
+    var dir = Directory.new()
+    if dir.open("res://Assets") == OK:
+        dir.list_dir_begin(true, true)
+        var fn = dir.get_next()
+        while fn != "":
+            if not dir.current_is_dir():
+                var lower = fn.to_lower()
+                if lower.begins_with("bg") and lower.ends_with(".jpg"):
+                    found.append(fn)
+            fn = dir.get_next()
+        dir.list_dir_end()
+    found.sort()
+    if found.size() > 0:
+        textures.clear()
+        for name in found:
+            var path = "res://Assets/" + name
+            var tex = load(path)
+            if tex is Texture:
+                textures.append(tex)
+    # Fallback if none discovered
+    if textures.size() == 0:
+        var defaults = [
+            "res://Assets/bg1.jpg",
+            "res://Assets/bg2.jpg",
+            "res://Assets/bg3.jpg",
+            "res://Assets/bg4.jpg"
+        ]
+        for p in defaults:
+            if ResourceLoader.exists(p):
+                var t = load(p)
+                if t is Texture:
+                    textures.append(t)
+    if textures.size() == 0:
+        return
+    texture = textures[current_texture_index]
+    modulate = Color(1, 1, 1, 0) # Start transparent for the first fade-in
+    cycle_background()
 
 func cycle_background():
 	if tween:

@@ -100,13 +100,18 @@ func _on_login_pressed():
 	var player_name = name_edit.text.strip_edges()
 	if player_name == "":
 		player_name = "Guest"
-	PlayerManager.player_data["player_name"] = player_name
-	SaveManager.save_player(PlayerManager.player_data)
+	var pd = PlayerManager.get("player_data")
+	if typeof(pd) != TYPE_DICTIONARY:
+		pd = {}
+	pd["player_name"] = player_name
+	PlayerManager.set("player_data", pd)
+	SaveManager.save_player(pd)
 	print("[Login.gd] _on_login_pressed: Player data saved.")
 
-	if not PlayerManager.player_data.has("avatar"):
-		print("[Login.gd] _on_login_pressed: No avatar found, skipping avatar selection.")
-		_on_avatar_processed(null)
+	var pd2 = PlayerManager.get("player_data")
+	if typeof(pd2) != TYPE_DICTIONARY or not pd2.has("avatar"):
+		print("[Login.gd] _on_login_pressed: No avatar found, loading Profile scene.")
+		get_tree().change_scene("res://Scenes/Profile.tscn")
 		return
 	else:
 		print("[Login.gd] _on_login_pressed: Avatar found, changing to Menu scene.")
@@ -134,8 +139,8 @@ func _on_authentication_succeeded(auth_data):
 	print("[Login.gd] _on_authentication_succeeded: Player data loaded.")
 
 	if not PlayerManager.player_data.has("avatar"):
-		print("[Login.gd] _on_authentication_succeeded: No avatar found, skipping avatar selection.")
-		_on_avatar_processed(null)
+		print("[Login.gd] _on_authentication_succeeded: No avatar found, loading Profile scene.")
+		get_tree().change_scene("res://Scenes/Profile.tscn")
 		return
 	else:
 		print("[Login.gd] _on_authentication_succeeded: Avatar found, changing to Menu scene.")
@@ -277,7 +282,13 @@ func _on_image_selected(path):
 
 	cropped_img.resize(150, 150)
 
-	var save_path = "user://avatar.png"
+	# Save under per-user avatar path
+	var pname = "Player"
+	if typeof(PlayerManager.player_data) == TYPE_DICTIONARY:
+		pname = str(PlayerManager.player_data.get("player_name", "Player"))
+	var d = Directory.new()
+	d.make_dir_recursive("user://avatars")
+	var save_path = "user://avatars/" + pname + ".png"
 	err = cropped_img.save_png(save_path)
 	if err != OK:
 		print("[Login.gd] _on_image_selected: Error saving avatar.")

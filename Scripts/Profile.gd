@@ -15,16 +15,45 @@ onready var frame_selection_button = $MarginContainer/VBoxContainer/HBoxContaine
 onready var change_avatar_button = $MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ChangeAvatarButton
 onready var back_button = $MarginContainer/VBoxContainer/BackButton
 
+# Gallery state for built-in avatars
+var _avatar_paths: Array = []
+var _avatar_index: int = 0
+var _avatar_label: Label = null
+
 func _ready():
 	display_player_data()
 	
-	# Enable avatar upload on all platforms; use FileDialog for mobile and desktop
-	change_avatar_button.connect("pressed", self, "_on_change_avatar_pressed")
-	file_dialog.connect("file_selected", self, "_on_file_selected")
-	# Ensure the dialog opens files (photo picker), not saving (Godot 3 API)
-	file_dialog.mode = FileDialog.MODE_OPEN_FILE
-	# Restrict to common image types
-	file_dialog.filters = PoolStringArray(["*.png, *.jpg, *.jpeg; Image Files"])
+	# Build cyclable gallery of avatar options from Assets/Dots/*avatar.png
+	_build_avatar_gallery()
+	# Rebuild UI: add Prev/Next and a label below
+	var right_box = change_avatar_button.get_parent()
+	var insert_at = 0
+	if right_box != null:
+		# Create nav row (Prev | Next)
+		var nav = HBoxContainer.new()
+		nav.add_constant_override("separation", 8)
+		var prev_btn = Button.new()
+		prev_btn.text = "\u25C0 Prev"
+		prev_btn.connect("pressed", self, "_on_prev_avatar")
+		# Reuse existing ChangeAvatarButton as Next
+		change_avatar_button.text = "Next \u25B6"
+		if change_avatar_button.is_connected("pressed", self, "_on_change_avatar_pressed"):
+			change_avatar_button.disconnect("pressed", self, "_on_change_avatar_pressed")
+		if not change_avatar_button.is_connected("pressed", self, "_on_cycle_avatar"):
+			change_avatar_button.connect("pressed", self, "_on_cycle_avatar")
+		insert_at = right_box.get_children().find(change_avatar_button)
+		right_box.remove_child(change_avatar_button)
+		nav.add_child(prev_btn)
+		nav.add_child(change_avatar_button)
+		right_box.add_child(nav)
+		right_box.move_child(nav, max(0, insert_at))
+		# Add label just below nav and above frame selector
+		_avatar_label = Label.new()
+		_avatar_label.align = Label.ALIGN_CENTER
+		right_box.add_child(_avatar_label)
+		var frame_idx = right_box.get_children().find(frame_selection_button)
+		if frame_idx != -1:
+			right_box.move_child(_avatar_label, frame_idx)
 
 	back_button.connect("pressed", self, "_on_back_button_pressed")
 	frame_selection_button.connect("item_selected", self, "_on_frame_selected")
@@ -51,6 +80,11 @@ func display_player_data():
 			var tex = ImageTexture.new()
 			tex.create_from_image(img)
 			avatar_texture_rect.texture = tex
+	elif _avatar_paths.size() > 0:
+		# Preview first built-in if no user avatar yet
+		var p = _avatar_paths[_avatar_index]
+		_preview_avatar_res(p)
+		_update_avatar_label_from_path(p)
 
 	# Display Objectives
 	for child in objectives_container.get_children():
@@ -102,9 +136,89 @@ func _on_frame_selected(index):
 # For mobile, a native plugin would be needed to open the photo gallery.
 # You would then call _on_file_selected with the path from the native plugin.
 func _on_change_avatar_pressed():
-	file_dialog.popup_centered()
+	# Legacy hook; use cycler instead
+	_on_cycle_avatar()
+
+func _build_avatar_gallery() -> void:
+	_avatar_paths.clear()
+	var dir = Directory.new()
+	if dir.open("res://Assets/Dots") != OK:
+		return
+	dir.list_dir_begin()
+	var fname = dir.get_next()
+	while fname != "":
+		if not dir.current_is_dir():
+			var lower = fname.to_lower()
+			if lower.ends_with("avatar.png"):
+				_avatar_paths.append("res://Assets/Dots/" + fname)
+		fname = dir.get_next()
+	dir.list_dir_end()
+	_avatar_paths.sort()
+	_avatar_index = 0
+
+func _on_cycle_avatar():
+	if _avatar_paths.size() == 0:
+		return
+	_avatar_index = (_avatar_index + 1) % _avatar_paths.size()
+	var path: String = _avatar_paths[_avatar_index]
+	# Save selected avatar to user storage to keep rest of the game logic unchanged
+	_apply_avatar_from_res(path)
+	_update_avatar_label_from_path(path)
+
+func _on_prev_avatar():
+	if _avatar_paths.size() == 0:
+		return
+	_avatar_index = (_avatar_index - 1 + _avatar_paths.size()) % _avatar_paths.size()
+	var path: String = _avatar_paths[_avatar_index]
+	_apply_avatar_from_res(path)
+	_update_avatar_label_from_path(path)
+
+func _preview_avatar_res(path: String) -> void:
+	var tex = load(path)
+	if tex is Texture:
+		avatar_texture_rect.texture = tex
+
+func _apply_avatar_from_res(path: String) -> void:
+	var img = Image.new()
+	var ok = img.load(path)
+	if ok == OK:
+		img = _crop_to_square(img)
+		img.resize(512, 512, Image.INTERPOLATE_LANCZOS)
+		var avatars_dir: String = "user://avatars"
+		var d = Directory.new()
+		if d.open("user://") == OK:
+			d.make_dir_recursive("avatars")
+		var save_path: String = avatars_dir + "/" + PlayerManager.get_player_name() + ".png"
+		var err: int = img.save_png(save_path)
+		if err != OK:
+			push_warning("Failed to save avatar: " + str(err))
+		# Update preview
+		var tex = ImageTexture.new()
+		tex.create_from_image(img)
+		avatar_texture_rect.texture = tex
+		# Notify game UI to refresh
+		if PlayerManager != null and PlayerManager.has_method("notify_avatar_changed"):
+			PlayerManager.notify_avatar_changed()
+
+func _update_avatar_label_from_path(path: String) -> void:
+	if _avatar_label == null:
+		return
+	var fname: String = String(path).get_file()
+	fname = fname.replace(".png", "")
+	if fname.ends_with("avatar"):
+		fname = fname.substr(0, fname.length() - 6)
+	if fname.length() == 0:
+		_avatar_label.text = ""
+		return
+	var nice = fname.substr(0,1).to_upper() + fname.substr(1).to_lower()
+	_avatar_label.text = "Avatar: " + nice
 
 func _on_file_selected(path):
+	# Validate selection: only allow res://Assets/Dots/*avatar.png
+	var p = String(path)
+	if not p.begins_with("res://Assets/Dots/") or not p.to_lower().ends_with("avatar.png"):
+		push_warning("Please select a character avatar PNG from Assets/Dots (…avatar.png)")
+		return
 	var img = Image.new()
 	var load_err = img.load(path)
 	if load_err == OK:

@@ -20,6 +20,7 @@ var player_data = {
 	"best_combo": 0,
 	"total_lines_cleared": 0,
 	"bonus_spins": 0,
+	"broken_sunglasses": 0,
 	"current_frame": "default",
 	"meaner_meter": {"current": 0, "max": 100},
 	"unlocks": {
@@ -27,6 +28,7 @@ var player_data = {
 		"frames": ["default", "frame_2"],
 		"aliases": []
 	},
+	"jailbreaks": {},
 	"objectives": {
 		"time_played_1hr": false
 	}
@@ -268,6 +270,10 @@ func increment_bonus_spins() -> void:
 			AchievementManager.unlock_achievement("frequent_flyer")
 	save_player_data()
 
+func increment_broken_sunglasses() -> void:
+	player_data["broken_sunglasses"] = int(player_data.get("broken_sunglasses", 0)) + 1
+	save_player_data()
+
 # MEANER METER API
 func get_meaner_meter_current() -> int:
 	if typeof(player_data) == TYPE_DICTIONARY:
@@ -308,4 +314,10 @@ func reset_meaner_meter() -> void:
 	emit_signal("meaner_meter_changed", 0, int(meter.get("max", 100)))
 	save_player_data()
 
-
+func increment_jailbreak_for_color(color: String) -> void:
+	if not player_data.has("jailbreaks"):
+		player_data["jailbreaks"] = {}
+	var jb = player_data["jailbreaks"]
+	jb[color] = int(jb.get(color, 0)) + 1
+	player_data["jailbreaks"] = jb
+	save_player_data()

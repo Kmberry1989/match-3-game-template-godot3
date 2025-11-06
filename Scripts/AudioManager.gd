@@ -9,6 +9,9 @@ const MAX_SFX_PLAYERS = 8 # Max simultaneous sound effects
 
 var sounds = {}
 var music_tracks = {}
+var ingame_playlist = [] # Array of ingame music paths
+var _ingame_index = 0
+var _playlist_mode = "" # "ingame" or ""
 
 var music_bus_idx
 var sfx_bus_idx
@@ -59,7 +62,8 @@ func load_sounds():
 	var arrest_sounds = {
 		"siren": "res://Assets/Sounds/siren.ogg",
 		"jail_progress": "res://Assets/Sounds/jail_progress.ogg",
-		"jail_break": "res://Assets/Sounds/jail_break.ogg"
+		"jail_break": "res://Assets/Sounds/jail_break.ogg",
+		"clear_board": "res://Assets/Sounds/clear_board.ogg"
 	}
 	for k in arrest_sounds.keys():
 		var p = arrest_sounds[k]
@@ -83,6 +87,24 @@ func load_music():
 	_add_music_track("menu", "res://Assets/Sounds/music_menu.ogg")
 	_add_music_track("ingame", "res://Assets/Sounds/music_ingame.ogg")
 
+	# Discover additional ingame tracks: any file named music_ingame*.ogg
+	var dir = Directory.new()
+	if dir.open("res://Assets/Sounds") == OK:
+		dir.list_dir_begin(true, true)
+		var fn = dir.get_next()
+		var found = []
+		while fn != "":
+			if not dir.current_is_dir():
+				if fn.to_lower().begins_with("music_ingame") and fn.to_lower().ends_with(".ogg"):
+					found.append(fn)
+			fn = dir.get_next()
+		found.sort()
+		for name in found:
+			var full = "res://Assets/Sounds/" + name
+			if ResourceLoader.exists(full):
+				ingame_playlist.append(full)
+		dir.list_dir_end()
+
 func _add_music_track(track_name, path):
 	# Only register track if file exists and loads successfully
 	if ResourceLoader.exists(path):
@@ -100,8 +122,8 @@ func play_sound(sound_name):
 	for player in sfx_players:
 		if not player.is_playing():
 			var st = load(sounds[sound_name])
-			# Ensure jail-related SFX never loop even if imported with loop enabled
-			if sound_name == "jail_progress" or sound_name == "jail_break":
+			# Ensure certain SFX never loop even if imported with loop enabled
+			if sound_name == "jail_progress" or sound_name == "jail_break" or sound_name == "siren" or sound_name == "clear_board":
 				if st is AudioStreamOGGVorbis:
 					st.loop = false
 				elif st is AudioStreamSample:
@@ -112,7 +134,15 @@ func play_sound(sound_name):
 
 func play_music(track_name, loop = true):
 	var stream = null
-	if music_tracks.has(track_name):
+	if track_name == "ingame" and ingame_playlist.size() > 0:
+		_playlist_mode = "ingame"
+		# Ensure we respond to track completion to advance the playlist
+		if not music_player.is_connected("finished", self, "_on_music_finished"):
+			music_player.connect("finished", self, "_on_music_finished")
+		_ingame_index = 0
+		_play_next_ingame_track()
+		return
+	elif music_tracks.has(track_name):
 		stream = load(music_tracks[track_name])
 	else:
 		# Friendly fallback order
@@ -135,9 +165,27 @@ func play_music(track_name, loop = true):
 			print("Music not found and no fallback available: ", track_name)
 			return
 
+	_playlist_mode = ""
+	if music_player.is_connected("finished", self, "_on_music_finished"):
+		music_player.disconnect("finished", self, "_on_music_finished")
 	stream.loop = loop
 	music_player.stream = stream
 	music_player.play()
+
+func _play_next_ingame_track():
+	if ingame_playlist.size() == 0:
+		return
+	var path = ingame_playlist[_ingame_index % ingame_playlist.size()]
+	_ingame_index = (_ingame_index + 1) % max(ingame_playlist.size(), 1)
+	var st = load(path)
+	if st is AudioStreamOGGVorbis:
+		st.loop = false
+	music_player.stream = st
+	music_player.play()
+
+func _on_music_finished():
+	if _playlist_mode == "ingame":
+		_play_next_ingame_track()
 
 func stop_music():
 	music_player.stop()
