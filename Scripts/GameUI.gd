@@ -245,6 +245,13 @@ func _show_bonus_slot():
 	# Force-attach the correct script to avoid stale/cached wrong scripts
 	slot.set_script(load(expected_script_path))
 	slot.name = "BonusSlot"
+	# On iOS Safari, a topmost CanvasLayer can sometimes swallow touches
+	# despite MOUSE_FILTER_IGNORE. Ensure the bonus slot's layer sits above
+	# any decorative overlays (e.g., GoldBorderLayer) for reliable input.
+	if layer is CanvasLayer:
+		# Put bonus UI clearly on top
+		layer.layer = 2001
+
 	if slot.has_signal("finished"):
 		slot.connect("finished", self, "_on_bonus_slot_closed")
 	layer.add_child(slot)

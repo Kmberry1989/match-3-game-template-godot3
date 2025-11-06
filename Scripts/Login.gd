@@ -32,6 +32,12 @@ func _ready():
 		elif c is Node2D:
 			c.scale = Vector2(scale_factor, scale_factor)
 
+	# Make the main login field and button twice as large as the rest
+	if name_edit != null and name_edit is Control:
+		name_edit.rect_scale = name_edit.rect_scale * 2.0
+	if login_button != null and login_button is Control:
+		login_button.rect_scale = login_button.rect_scale * 2.0
+
 	if get_node_or_null("/root/AudioManager") != null:
 		print("[Login.gd] _ready: Playing login music.")
 		AudioManager.play_music("login")

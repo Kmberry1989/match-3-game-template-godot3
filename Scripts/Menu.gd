@@ -69,7 +69,7 @@ func _ready():
 	offline_button.set_pressed_texture(pressed_tex)
 	offline_button.set_hover_texture(hover_tex)
 	offline_button.connect("pressed", self, "_on_offline_button_pressed")
-	offline_button.set_scale(Vector2(2.0, 2.0))
+	offline_button.rect_scale = Vector2(1.8, 1.8)
 	vbox.add_child(offline_button)
 
 	var offline_label = Label.new()
@@ -84,14 +84,14 @@ func _ready():
 	offline_label.margin_bottom = 0
 	offline_label.align = Label.ALIGN_CENTER
 	offline_label.valign = Label.VALIGN_CENTER
-	offline_label.rect_scale = Vector2(2.5, 2.5)
+	# Keep label unscaled so it stays centered inside the button
 	offline_button.add_child(offline_label)
 
 	profile_button.set_normal_texture(normal_tex)
 	profile_button.set_pressed_texture(pressed_tex)
 	profile_button.set_hover_texture(hover_tex)
 	profile_button.connect("pressed", self, "_on_profile_button_pressed")
-	profile_button.set_scale(Vector2(2.0, 2.0))
+	profile_button.rect_scale = Vector2(1.8, 1.8)
 	vbox.add_child(profile_button)
 
 	var profile_label = Label.new()
@@ -106,14 +106,14 @@ func _ready():
 	profile_label.margin_bottom = 0
 	profile_label.align = Label.ALIGN_CENTER
 	profile_label.valign = Label.VALIGN_CENTER
-	profile_label.rect_scale = Vector2(2.5, 2.5)
+	# Keep label unscaled so it stays centered inside the button
 	profile_button.add_child(profile_label)
 
 	showcase_button.set_normal_texture(normal_tex)
 	showcase_button.set_pressed_texture(pressed_tex)
 	showcase_button.set_hover_texture(hover_tex)
 	showcase_button.connect("pressed", self, "_on_showcase_button_pressed")
-	showcase_button.set_scale(Vector2(2.0, 2.0))
+	showcase_button.rect_scale = Vector2(1.8, 1.8)
 	vbox.add_child(showcase_button)
 
 	var showcase_label = Label.new()
@@ -128,14 +128,14 @@ func _ready():
 	showcase_label.margin_bottom = 0
 	showcase_label.align = Label.ALIGN_CENTER
 	showcase_label.valign = Label.VALIGN_CENTER
-	showcase_label.rect_scale = Vector2(2.5, 2.5)
+	# Keep label unscaled so it stays centered inside the button
 	showcase_button.add_child(showcase_label)
 
 	shop_button.set_normal_texture(normal_tex)
 	shop_button.set_pressed_texture(pressed_tex)
 	shop_button.set_hover_texture(hover_tex)
 	shop_button.connect("pressed", self, "_on_shop_button_pressed")
-	shop_button.set_scale(Vector2(2.0, 2.0))
+	shop_button.rect_scale = Vector2(1.8, 1.8)
 	vbox.add_child(shop_button)
 
 	var shop_label = Label.new()
@@ -150,14 +150,14 @@ func _ready():
 	shop_label.margin_bottom = 0
 	shop_label.align = Label.ALIGN_CENTER
 	shop_label.valign = Label.VALIGN_CENTER
-	shop_label.rect_scale = Vector2(2.5, 2.5)
+	# Keep label unscaled so it stays centered inside the button
 	shop_button.add_child(shop_label)
 
 	multiplayer_button.set_normal_texture(normal_tex)
 	multiplayer_button.set_pressed_texture(pressed_tex)
 	multiplayer_button.set_hover_texture(hover_tex)
 	multiplayer_button.connect("pressed", self, "_on_multiplayer_button_pressed")
-	multiplayer_button.set_scale(Vector2(2.0, 2.0))
+	multiplayer_button.rect_scale = Vector2(1.8, 1.8)
 	vbox.add_child(multiplayer_button)
 
 	var mp_label = Label.new()
@@ -172,7 +172,7 @@ func _ready():
 	mp_label.margin_bottom = 0
 	mp_label.align = Label.ALIGN_CENTER
 	mp_label.valign = Label.VALIGN_CENTER
-	mp_label.rect_scale = Vector2(2.5, 2.5)
+	# Keep label unscaled so it stays centered inside the button
 	multiplayer_button.add_child(mp_label)
 	# Hide multiplayer for this build
 	multiplayer_button.visible = false
@@ -181,7 +181,7 @@ func _ready():
 	logout_button.set_pressed_texture(pressed_tex)
 	logout_button.set_hover_texture(hover_tex)
 	logout_button.connect("pressed", self, "_on_logout_button_pressed")
-	logout_button.set_scale(Vector2(2.0, 2.0))
+	logout_button.rect_scale = Vector2(1.8, 1.8)
 	vbox.add_child(logout_button)
 
 	var logout_label = Label.new()
@@ -196,7 +196,7 @@ func _ready():
 	logout_label.margin_bottom = 0
 	logout_label.align = Label.ALIGN_CENTER
 	logout_label.valign = Label.VALIGN_CENTER
-	logout_label.rect_scale = Vector2(2.5, 2.5)
+	# Keep label unscaled so it stays centered inside the button
 	logout_button.add_child(logout_label)
 
 	_update_logout_visibility()
