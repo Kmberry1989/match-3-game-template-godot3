@@ -1,16 +1,17 @@
-[gd_resource type="Resource" script_class="Achievement" load_steps=5 format=3 uid="uid://dqfqdc0203kus"]
+[gd_resource type="Achievement" load_steps=4 format=2]
 
-[ext_resource type="Script" uid="uid://dtyojmellf4e5" path="res://addons/milestone/scripts/achievements/achievement.gd" id="1"]
-[ext_resource type="Texture2D" uid="uid://cg3b84ak8bsrv" path="res://addons/milestone/icons/hidden_achievement.svg" id="1_i437u"]
-[ext_resource type="Texture2D" uid="uid://csomh5mge42w1" path="res://Assets/Trophies/trophy_justifythemeans.png" id="2"]
-[ext_resource type="Texture2D" uid="uid://eunq3enckraj" path="res://Assets/Trophies/trophy_justifythemeans_locked.png" id="4_vgjtd"]
+[ext_resource path="res://addons/milestone/scripts/achievements/achievement.gd" type="Script" id=1]
+[ext_resource path="res://Assets/Trophies/trophy_justifythemeans.png" type="Texture" id=2]
+[ext_resource path="res://Assets/Trophies/trophy_justifythemeans_locked.png" type="Texture" id=3]
 
 [resource]
-script = ExtResource("1")
+script = ExtResource( 1 )
 id = "justify_the_means"
-icon = ExtResource("2")
-unachieved_icon = ExtResource("4_vgjtd")
+icon = ExtResource( 2 )
+unachieved_icon = ExtResource( 3 )
 name = "Justify the Means"
-description = "Create a wildcard with a 5-in-a-row."
-considered_rare = true
-progress_goal = 1.0
+description = "Create a wildcard."
+hidden = false
+progressive = false
+progress_goal = 0
+indicate_progress_interval = 1
