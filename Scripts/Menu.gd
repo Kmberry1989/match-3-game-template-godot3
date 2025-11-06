@@ -9,6 +9,12 @@ var logout_button
 var multiplayer_button
 onready var firebase = get_node("/root/Firebase") if has_node("/root/Firebase") else null
 
+# Preload button textures so they're included in export bundles
+onready var _tex_play = preload("res://Assets/Visuals/PLAY.png")
+onready var _tex_profile = preload("res://Assets/Visuals/PROFILE.png")
+onready var _tex_showcase = preload("res://Assets/Visuals/SHOWCASE.png")
+onready var _tex_shop = preload("res://Assets/Visuals/SHOP.png")
+
 func _ready():
 	status_label = Label.new()
 	offline_button = TextureButton.new()
@@ -65,9 +71,9 @@ func _ready():
 	var hover_tex = load("res://Assets/Visuals/button_hover.svg")
 	var pressed_tex = load("res://Assets/Visuals/button_pressed.svg")
 
-	offline_button.set_normal_texture(load("res://Assets/Visuals/PLAY.png"))
-	offline_button.set_pressed_texture(load("res://Assets/Visuals/PLAY.png"))
-	offline_button.set_hover_texture(load("res://Assets/Visuals/PLAY.png"))
+    offline_button.set_normal_texture(_tex_play)
+    offline_button.set_pressed_texture(_tex_play)
+    offline_button.set_hover_texture(_tex_play)
 	offline_button.connect("pressed", self, "_on_offline_button_pressed")
 	# Enlarge the entire button so its label scales up when no font is present
 	offline_button.rect_scale = Vector2(2.5, 2.5)
@@ -92,9 +98,9 @@ func _ready():
 	offline_label.visible = false
 	offline_button.add_child(offline_label)
 
-	profile_button.set_normal_texture(load("res://Assets/Visuals/PROFILE.png"))
-	profile_button.set_pressed_texture(load("res://Assets/Visuals/PROFILE.png"))
-	profile_button.set_hover_texture(load("res://Assets/Visuals/PROFILE.png"))
+    profile_button.set_normal_texture(_tex_profile)
+    profile_button.set_pressed_texture(_tex_profile)
+    profile_button.set_hover_texture(_tex_profile)
 	profile_button.connect("pressed", self, "_on_profile_button_pressed")
 	profile_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(profile_button)
@@ -129,12 +135,7 @@ func _ready():
 		needs_avatar_hint = true
 	if needs_avatar_hint:
 		var avatar_hint = Label.new()
-		var hint_text = ""
-		if has_avatar:
-			hint_text = "Tip: Customize your avatar in PROFILE"
-		else:
-			hint_text = "Tip: Open PROFILE to set your avatar"
-		avatar_hint.text = hint_text
+		avatar_hint.text = has_avatar ? "Tip: Customize your avatar in PROFILE" : "Tip: Open PROFILE to set your avatar"
 		avatar_hint.align = Label.ALIGN_CENTER
 		avatar_hint.valign = Label.VALIGN_CENTER
 		avatar_hint.rect_min_size = Vector2(0, 28)
@@ -148,9 +149,9 @@ func _ready():
 			PlayerManager.player_data["has_seen_profile_hint"] = true
 			SaveManager.save_player(PlayerManager.player_data)
 
-	showcase_button.set_normal_texture(load("res://Assets/Visuals/SHOWCASE.png"))
-	showcase_button.set_pressed_texture(load("res://Assets/Visuals/SHOWCASE.png"))
-	showcase_button.set_hover_texture(load("res://Assets/Visuals/SHOWCASE.png"))
+    showcase_button.set_normal_texture(_tex_showcase)
+    showcase_button.set_pressed_texture(_tex_showcase)
+    showcase_button.set_hover_texture(_tex_showcase)
 	showcase_button.connect("pressed", self, "_on_showcase_button_pressed")
 	showcase_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(showcase_button)
@@ -173,9 +174,9 @@ func _ready():
 	showcase_label.visible = false
 	showcase_button.add_child(showcase_label)
 
-	shop_button.set_normal_texture(load("res://Assets/Visuals/SHOP.png"))
-	shop_button.set_pressed_texture(load("res://Assets/Visuals/SHOP.png"))
-	shop_button.set_hover_texture(load("res://Assets/Visuals/SHOP.png"))
+    shop_button.set_normal_texture(_tex_shop)
+    shop_button.set_pressed_texture(_tex_shop)
+    shop_button.set_hover_texture(_tex_shop)
 	shop_button.connect("pressed", self, "_on_shop_button_pressed")
 	shop_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(shop_button)
