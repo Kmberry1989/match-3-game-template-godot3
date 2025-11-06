@@ -2,6 +2,8 @@ extends Control
 
 onready var back_button: Button = Button.new()
 onready var coins_label: Label = Label.new()
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
 
 var _cards_row: HBoxContainer
 var _scroll: ScrollContainer

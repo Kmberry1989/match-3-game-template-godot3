@@ -51,22 +51,29 @@ func _ready():
 				vb.add_child(viewer_desc)
 
 func load_achievements():
-	# Populate from achievement resources from AchievementManager
+	# Populate from achievement resources if the autoload exists
 	achievements.clear()
 	for child in trophy_grid.get_children():
 		child.queue_free()
-	
-	if not Engine.has_singleton("AchievementManager"):
+
+	var am = get_node_or_null("/root/AchievementManager")
+	if am == null:
 		return
 
-	var achievement_list = AchievementManager.get_achievements()
+	var achievement_list = []
+	if am.has_method("get_achievements"):
+		achievement_list = am.get_achievements()
 	for achievement_id in achievement_list:
-		var achievement_res = AchievementManager.get_achievement_resource(achievement_id)
+		var achievement_res = null
+		if am.has_method("get_achievement_resource"):
+			achievement_res = am.get_achievement_resource(achievement_id)
 		if typeof(achievement_res) == TYPE_OBJECT and achievement_res != null:
 			var id: String = achievement_res.id
 			var display: String = achievement_res.name
-			var unlocked = AchievementManager.is_unlocked(id)
-			
+			var unlocked := false
+			if am.has_method("is_unlocked"):
+				unlocked = am.is_unlocked(id)
+
 			var unlocked_icon = achievement_res.icon
 			var locked_icon = achievement_res.unachieved_icon
 

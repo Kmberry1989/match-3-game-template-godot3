@@ -7,6 +7,7 @@ const REFERENCE_DOT_PX = 512.0
 
 export var color = ""
 onready var sprite = get_node("Sprite")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
 var matched = false
 var scale_multiplier = 1.0
 var is_wildcard = false

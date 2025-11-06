@@ -4,6 +4,9 @@ extends Control
 # Toggle this to enable/disable the decorative gold border overlay.
 const GOLD_BORDER_ENABLED := false
 
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+
 onready var player_name_label = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/PlayerNameLabel
 onready var level_label = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/LevelLabel
 onready var xp_label = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/XpLabel
@@ -59,6 +62,10 @@ func update_xp_label():
 
 func _on_coins_changed(new_amount):
 	coins_label.text = "Coins: " + str(new_amount)
+
+func _on_avatar_changed():
+	# Refresh the player avatar texture when notified by PlayerManager
+	_update_avatar_photo()
 
 func _on_frame_changed(_frame_name):
 	_apply_current_frame()

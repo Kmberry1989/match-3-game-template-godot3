@@ -15,16 +15,18 @@ onready var frame_selection_button = $MarginContainer/VBoxContainer/HBoxContaine
 onready var change_avatar_button = $MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ChangeAvatarButton
 onready var back_button = $MarginContainer/VBoxContainer/BackButton
 
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+
 # Gallery state for built-in avatars
 var _avatar_paths: Array = []
 var _avatar_index: int = 0
 var _avatar_label: Label = null
 
 func _ready():
-	display_player_data()
-	
-	# Build cyclable gallery of avatar options from Assets/Dots/*avatar.png
+	# Build cyclable gallery of avatar options from Assets/Dots/*avatar.png first
 	_build_avatar_gallery()
+	# Then populate labels and preview, guarding for missing PlayerManager
+	display_player_data()
 	# Rebuild UI: add Prev/Next and a label below
 	var right_box = change_avatar_button.get_parent()
 	var insert_at = 0
@@ -59,6 +61,27 @@ func _ready():
 	frame_selection_button.connect("item_selected", self, "_on_frame_selected")
 
 func display_player_data():
+	# Fallback path if PlayerManager is unavailable
+	if PlayerManager == null:
+		player_name_label.text = "Name: Player"
+		time_played_label.text = "Time Played: 00:00:00"
+		level_label.text = "Level: 1"
+		xp_label.text = "XP: 0/0"
+		best_combo_label.text = "Best Combo: 0"
+		lines_cleared_label.text = "Dots Cleared: 0"
+		# Preview first built-in avatar if available
+		if _avatar_paths.size() > 0:
+			var p = _avatar_paths[_avatar_index]
+			_preview_avatar_res(p)
+			_update_avatar_label_from_path(p)
+		# Disable frame selection without PlayerManager
+		if is_instance_valid(frame_selection_button):
+			frame_selection_button.disabled = true
+		# Set default frame visual
+		avatar_frame_rect.texture = load("res://Assets/Visuals/avatar_frame_2.png")
+		return
+
+	# Normal path with PlayerManager available
 	var data = PlayerManager.player_data
 	player_name_label.text = "Name: " + data["player_name"]
 	# Ensure integer seconds for modulo ops
@@ -73,7 +96,7 @@ func display_player_data():
 	lines_cleared_label.text = "Dots Cleared: " + str(data["total_lines_cleared"])
 	
 	# Load avatar
-	var avatar_path = "user://avatars/" + PlayerManager.get_player_name() + ".png"
+	var avatar_path = "user://avatars/" + _get_player_name_fallback() + ".png"
 	if File.new().file_exists(avatar_path):
 		var img = Image.new()
 		if img.load(avatar_path) == OK:
@@ -120,17 +143,19 @@ func display_player_data():
 	update_avatar_frame()
 
 func update_avatar_frame():
-	var frame_name = PlayerManager.get_current_frame()
 	var frame_path = "res://Assets/Visuals/avatar_frame_2.png" # Default matches in-game
-	if frame_name != "default":
-		frame_path = "res://Assets/Visuals/avatar_" + frame_name + ".png"
+	if PlayerManager != null:
+		var frame_name = PlayerManager.get_current_frame()
+		if frame_name != "default":
+			frame_path = "res://Assets/Visuals/avatar_" + frame_name + ".png"
 	avatar_frame_rect.texture = load(frame_path)
 
 func _on_frame_selected(index):
 	var frame_name = frame_selection_button.get_item_text(index).to_lower()
-	PlayerManager.set_current_frame(frame_name)
+	if PlayerManager != null:
+		PlayerManager.set_current_frame(frame_name)
+		PlayerManager.save_player_data()
 	update_avatar_frame()
-	PlayerManager.save_player_data()
 
 # For desktop platforms, this function opens a file dialog.
 # For mobile, a native plugin would be needed to open the photo gallery.
@@ -188,7 +213,7 @@ func _apply_avatar_from_res(path: String) -> void:
 		var d = Directory.new()
 		if d.open("user://") == OK:
 			d.make_dir_recursive("avatars")
-		var save_path: String = avatars_dir + "/" + PlayerManager.get_player_name() + ".png"
+		var save_path: String = avatars_dir + "/" + _get_player_name_fallback() + ".png"
 		var err: int = img.save_png(save_path)
 		if err != OK:
 			push_warning("Failed to save avatar: " + str(err))
@@ -230,7 +255,7 @@ func _on_file_selected(path):
 		var d = Directory.new()
 		if d.open("user://") == OK:
 			d.make_dir_recursive("avatars")
-		var save_path: String = avatars_dir + "/" + PlayerManager.get_player_name() + ".png"
+		var save_path: String = avatars_dir + "/" + _get_player_name_fallback() + ".png"
 		var err: int = img.save_png(save_path)
 		if err != OK:
 			push_warning("Failed to save avatar: " + str(err))
@@ -241,6 +266,11 @@ func _on_file_selected(path):
 		# Notify game UI to refresh (emit from PlayerManager to avoid UNUSED_SIGNAL)
 		if PlayerManager != null and PlayerManager.has_method("notify_avatar_changed"):
 			PlayerManager.notify_avatar_changed()
+
+func _get_player_name_fallback() -> String:
+	if PlayerManager != null and PlayerManager.has_method("get_player_name"):
+		return String(PlayerManager.get_player_name())
+	return "Player"
 
 func _on_back_button_pressed():
 	get_tree().change_scene("res://Scenes/Menu.tscn")

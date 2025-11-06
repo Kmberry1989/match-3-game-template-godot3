@@ -3,6 +3,9 @@ extends Control
 var status_label
 var offline_button
 var profile_button
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+onready var MultiplayerManager = get_node_or_null("/root/MultiplayerManager")
 var showcase_button
 var shop_button
 var logout_button
@@ -243,22 +246,27 @@ func _ready():
 
 func _on_offline_button_pressed():
 	print("[Menu.gd] Play button pressed.")
+	_unlock_web_audio()
 	AudioManager.play_sound("ui_click")
 	_start_game()
 
 func _on_profile_button_pressed():
+	_unlock_web_audio()
 	AudioManager.play_sound("ui_click")
 	get_tree().change_scene("res://Scenes/Profile.tscn")
 
 func _on_showcase_button_pressed():
+	_unlock_web_audio()
 	AudioManager.play_sound("ui_click")
 	get_tree().change_scene("res://Scenes/Showcase.tscn")
 
 func _on_shop_button_pressed():
+	_unlock_web_audio()
 	AudioManager.play_sound("ui_click")
 	get_tree().change_scene("res://Scenes/Shop.tscn")
 
 func _on_multiplayer_button_pressed():
+	_unlock_web_audio()
 	AudioManager.play_sound("ui_click")
 	get_tree().change_scene("res://Scenes/MultiplayerLobby.tscn")
 
@@ -279,11 +287,18 @@ func _update_logout_visibility():
 	logout_button.visible = logout_visible
 
 func _on_logout_button_pressed():
+	_unlock_web_audio()
 	AudioManager.play_sound("ui_click")
 	if firebase != null:
 		firebase.Auth.logout()
 	PlayerManager.player_uid = ""
 	get_tree().change_scene("res://Scenes/Login.tscn")
+
+# iOS Safari: Ensure WebAudio context is resumed after first user gesture
+func _unlock_web_audio() -> void:
+	if OS.has_feature("JavaScript"):
+		var js = "(function(){try{var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; if(!window.godotAudioContext) window.godotAudioContext=new AC(); var ctx=window.godotAudioContext; if(ctx && ctx.state==='suspended' && ctx.resume){ctx.resume();}}catch(e){}})();"
+		JavaScript.eval(js, true)
 
 func _apply_big_font(lbl: Label, size: int) -> void:
 	# Use a DynamicFont if one exists under Assets/Fonts; otherwise keep default theme

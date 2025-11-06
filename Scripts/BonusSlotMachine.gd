@@ -3,6 +3,9 @@ class_name BonusSlotMachine
 
 signal finished
 
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+onready var AudioManager = get_node_or_null("/root/AudioManager")
+
 const SYMBOL_SIZE: Vector2 = Vector2(320, 320)
 const SYMBOL_DIR: String = "res://Assets/BonusSlot"
 # Preload textures in enum order: COIN, XP, WILDCARD, ROW_CLEAR, COL_CLEAR, MULT2X, MULT3X, FREE_SPIN
@@ -329,8 +332,8 @@ func _evaluate_cascade_result() -> void:
 		if a == SymbolId.FREE_SPIN:
 			wants_spin_again = true
 		# Achievement: One Win Ever
-		if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-			AchievementManager.unlock_achievement("one_win_ever")
+		if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+			PlayerManager.achievement_unlock("one_win_ever")
 	elif a == b or b == c or a == c:
 		# 2 of a kind
 		var sym2: int = _majority_symbol(ids)
@@ -342,8 +345,8 @@ func _evaluate_cascade_result() -> void:
 			AudioManager.play_sound("slot_win")
 		_confetti_burst_from(mask, 0.6)
 		# Achievement: One Win Ever
-		if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-			AchievementManager.unlock_achievement("one_win_ever")
+		if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+			PlayerManager.achievement_unlock("one_win_ever")
 	else:
 		msg = _apply_payout_mixed()
 		if AudioManager != null:
@@ -442,8 +445,8 @@ func _evaluate_result() -> void:
 		_confetti_burst_from(mask, 0.6)
 		_success = true
 		# Achievement: One Win Ever
-		if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
-			AchievementManager.unlock_achievement("one_win_ever")
+		if PlayerManager != null and PlayerManager.has_method("achievement_unlock"):
+			PlayerManager.achievement_unlock("one_win_ever")
 	else:
 		msg = _apply_payout_mixed()
 		_show_reel_glows([false, false, false])
