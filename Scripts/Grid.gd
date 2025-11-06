@@ -389,6 +389,50 @@ func _process(_delta):
 			dragged_dot.set_normal_texture()
 			dragged_dot = null
 			is_dragging = false
+
+func spawn_wildcard_safely() -> bool:
+	# Try to convert a random dot into a wildcard without creating an immediate match.
+	var candidates: Array = []
+	for i in range(width):
+		for j in range(height):
+			if all_dots[i][j] != null:
+				candidates.append(Vector2(i, j))
+	candidates.shuffle()
+	for p in candidates:
+		var i = int(p.x)
+		var j = int(p.y)
+		var d = all_dots[i][j]
+		if d == null:
+			continue
+		# Remember prior wildcard state so we can revert if unsafe
+		var was_wild = false
+		if d.has_method("set_wildcard"):
+			was_wild = bool(d.get("is_wildcard")) if d.has_method("get") else false
+			# Temporarily set as wildcard
+			d.set_wildcard(true)
+			# Check if this creates a run that includes this position
+			var unsafe = false
+			var groups = _compute_match_groups()
+			for g in groups:
+				var pos: Array = g["positions"]
+				for q in pos:
+					if int(q.x) == i and int(q.y) == j:
+						unsafe = true
+						break
+				if unsafe:
+					break
+			if unsafe:
+				# Revert and try another cell
+				d.set_wildcard(was_wild)
+				continue
+			# Safe — keep wildcard and play feedback
+			if AudioManager != null:
+				AudioManager.play_sound("wildcard_spawn")
+			if Engine.has_singleton("AchievementManager") or (typeof(AchievementManager) != TYPE_NIL):
+				AchievementManager.unlock_achievement("justify_the_means")
+			return true
+	# No safe spot found
+	return false
 	
 func find_matches():
 	var groups = _compute_match_groups()

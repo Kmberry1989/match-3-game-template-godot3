@@ -32,12 +32,13 @@ texture = ExtResource( 2 )
 expand = true
 
 [node name="Container" type="TextureRect" parent="."]
-margin_left = 117.128
-margin_top = 86.796
-margin_right = 953.128
-margin_bottom = 419.796
+margin_left = 97.0
+margin_top = 71.0
+margin_right = 1038.0
+margin_bottom = 485.0
 rect_scale = Vector2( 0.368726, 0.389164 )
 texture = ExtResource( 3 )
+expand = true
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 anchor_right = 1.0

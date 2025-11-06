@@ -216,7 +216,15 @@ func _on_shop_pressed():
 
 # MEANER METER: when filled, show the bonus slot
 func _on_meaner_meter_filled():
-	_show_bonus_slot()
+	# Instead of launching the bonus slot, spawn a wildcard safely on the grid
+	var root = get_tree().get_current_scene()
+	if root != null:
+		var grid = root.get_node_or_null("Grid")
+		if grid != null and grid.has_method("spawn_wildcard_safely"):
+			grid.spawn_wildcard_safely()
+	# Reset the meter after applying the effect
+	if PlayerManager != null and PlayerManager.has_method("reset_meaner_meter"):
+		PlayerManager.reset_meaner_meter()
 
 func _ensure_canvas_layer():
 	var root = get_tree().get_current_scene()
