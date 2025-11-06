@@ -17,6 +17,10 @@ signal match_faded(global_pos, color_name)
 var pulse_tween = null
 var float_tween = null
 var shadow = null
+var jail_overlay: Sprite = null
+var is_arrested: bool = false
+var wildcard_glow: Sprite = null
+var wildcard_glow_tween = null
 
 # Whether an XP orb has already been spawned for this dot in the current match.
 var orb_spawned = false
@@ -220,11 +224,13 @@ func set_normal_texture():
 		return
 	animation_state = "normal"
 	sprite.texture = normal_texture
+	clear_jail_overlay()
 
 func reset_to_normal_state():
 	if is_wildcard:
 		return
 	set_normal_texture()
+	_stop_wildcard_glow()
 
 func setup_blink_timer():
 	blink_timer.connect("timeout", self, "_on_blink_timer_timeout")
@@ -266,10 +272,13 @@ func set_wildcard(enable = true):
 		# Make the shadow slightly brighter for wildcard
 		if shadow:
 			shadow.modulate = Color(0.2,0.2,0.2,0.6)
+		_ensure_wildcard_glow()
+		_start_wildcard_glow()
 	else:
 		wildcard_timer.stop()
 		animation_state = "normal"
 		set_normal_texture()
+		_stop_wildcard_glow()
 
 func start_floating():
 	if float_tween:
@@ -291,8 +300,92 @@ func start_pulsing():
 	add_child(pulse_tween)
 	pulse_tween.interpolate_property(sprite, "scale", PULSE_SCALE_MIN * scale_multiplier, PULSE_SCALE_MAX * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
 	pulse_tween.interpolate_property(sprite, "scale", PULSE_SCALE_MAX * scale_multiplier, PULSE_SCALE_MIN * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
+	if jail_overlay != null:
+		pulse_tween.interpolate_property(jail_overlay, "scale", PULSE_SCALE_MIN * scale_multiplier, PULSE_SCALE_MAX * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+		pulse_tween.interpolate_property(jail_overlay, "scale", PULSE_SCALE_MAX * scale_multiplier, PULSE_SCALE_MIN * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
+	if wildcard_glow != null:
+		pulse_tween.interpolate_property(wildcard_glow, "scale", PULSE_SCALE_MIN * scale_multiplier * 1.2, PULSE_SCALE_MAX * scale_multiplier * 1.4, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+		pulse_tween.interpolate_property(wildcard_glow, "scale", PULSE_SCALE_MAX * scale_multiplier * 1.4, PULSE_SCALE_MIN * scale_multiplier * 1.2, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
 	pulse_tween.start()
 	pulse_tween.connect("tween_all_completed", self, "start_pulsing")
+
+# Rainbow glow for wildcards
+func _ensure_wildcard_glow() -> void:
+	if wildcard_glow != null:
+		return
+	wildcard_glow = Sprite.new()
+	wildcard_glow.centered = true
+	wildcard_glow.texture = flash_texture
+	wildcard_glow.modulate = Color(1,0,0,0.55)
+	wildcard_glow.z_index = -2
+	wildcard_glow.scale = Vector2(1.2, 1.2) * scale_multiplier
+	add_child(wildcard_glow)
+
+func _start_wildcard_glow() -> void:
+	_stop_wildcard_glow()
+	if wildcard_glow == null:
+		return
+	var seq = [
+		Color(1,0,0,0.55),
+		Color(1,0.6,0,0.55),
+		Color(1,1,0,0.55),
+		Color(0,1,0,0.55),
+		Color(0,1,1,0.55),
+		Color(0,0.4,1,0.55),
+		Color(1,0,1,0.55)
+	]
+	wildcard_glow_tween = get_tree().create_tween()
+	wildcard_glow_tween.set_loops()
+	for c in seq:
+		wildcard_glow_tween.tween_property(wildcard_glow, "modulate", c, 0.18).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+func _stop_wildcard_glow() -> void:
+	if wildcard_glow_tween != null:
+		wildcard_glow_tween.kill()
+		wildcard_glow_tween = null
+	if wildcard_glow != null and is_instance_valid(wildcard_glow):
+		wildcard_glow.queue_free()
+	wildcard_glow = null
+
+func apply_jail_overlay(stage: int) -> void:
+	is_arrested = true
+	if jail_overlay == null:
+		jail_overlay = Sprite.new()
+		jail_overlay.centered = true
+		jail_overlay.z_index = 5
+		add_child(jail_overlay)
+	var tex_path = "res://Assets/Visuals/avatar_injail" + str(stage) + ".png"
+	var tex = load(tex_path)
+	if tex is Texture:
+		jail_overlay.texture = tex
+	jail_overlay.scale = sprite.scale
+
+func update_jail_overlay(stage: int) -> void:
+	if jail_overlay == null:
+		return
+	var tex_path = "res://Assets/Visuals/avatar_injail" + str(stage) + ".png"
+	var tex = load(tex_path)
+	if tex is Texture:
+		jail_overlay.texture = tex
+
+func show_jailbreak_then_clear() -> void:
+	if jail_overlay == null:
+		return
+	var tex = load("res://Assets/Visuals/avatar_jailbreak.png")
+	if tex is Texture:
+		jail_overlay.texture = tex
+	var t = get_tree().create_tween()
+	t.tween_property(jail_overlay, "modulate:a", 0.0, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	yield(t, "finished")
+	clear_jail_overlay()
+	reset_to_normal_state()
+
+func clear_jail_overlay() -> void:
+	if jail_overlay != null:
+		if is_instance_valid(jail_overlay):
+			jail_overlay.queue_free()
+	jail_overlay = null
+	is_arrested = false
 
 func _on_blink_timer_timeout():
 	if animation_state == "normal":

@@ -79,6 +79,14 @@ var _xp_mult_remaining: int = 0
 # Track unsuccessful player attempts
 var _failed_attempts: int = 0
 
+# Arrest mini-game state
+var _arrest_active: bool = false
+var _arrested_color: String = ""
+var _arrested_dot = null
+var _arrest_stage: int = 0 # 3 -> 2 -> 1 -> 0 then jailbreak
+var _match_events: int = 0 # count of successful match resolutions
+var _siren_played: bool = false
+
 func _ready():
 	state = move
 	setup_timers()
@@ -194,7 +202,11 @@ func spawn_dots():
 	for i in range(width):
 		for j in range(height):
 			if !restricted_fill(Vector2(i, j)):
-				var pool = possible_colors
+				var pool = possible_colors.duplicate()
+				if _arrest_active and pool.has(_arrested_color):
+					# Weight the arrested color to appear more often
+					for _w in range(3):
+						pool.append(_arrested_color)
 				var rand = floor(rand_range(0, pool.size()))
 				var color = pool[rand]
 				var loops = 0
@@ -213,10 +225,13 @@ func spawn_dots():
 					dot_instance.queue_free()
 
 				var dot = dot_scene_to_use.instance()
-				dot.z_index = height - j
+				dot.z_index = j
 				add_child(dot)
 				dot.position = grid_to_pixel(i, j)
 				all_dots[i][j] = dot
+				# Track base z for jailed layering
+				dot.set_meta("base_z", j)
+				_apply_arrest_overlay_if_needed(dot)
 			
 func match_at(i, j, color):
 	if i > 1:
@@ -265,7 +280,11 @@ func _input(event):
 				is_dragging = false
 				
 				var start_grid_pos = pixel_to_grid(drag_start_position.x, drag_start_position.y)
-				dragged_dot.z_index = height - start_grid_pos.y # Restore z-index
+	var basez = int(start_grid_pos.y)
+	if bool(dragged_dot.get("is_arrested") if dragged_dot.has_method("get") else false):
+		dragged_dot.z_index = basez - 1
+	else:
+		dragged_dot.z_index = basez # Restore z-index by row
 				var end_grid_pos = pixel_to_grid(event.position.x, event.position.y)
 				
 				var difference = end_grid_pos - start_grid_pos
@@ -318,10 +337,24 @@ func swap_dots(column, row, direction) -> bool:
 		other_dot.z_index = temp_z
 		store_info(first_dot, other_dot, Vector2(col, r), direction)
 		state = wait
-		all_dots[col][r] = other_dot
-		all_dots[nx][ny] = first_dot
-		first_dot.move(grid_to_pixel(nx, ny))
-		other_dot.move(grid_to_pixel(col, r))
+	all_dots[col][r] = other_dot
+	all_dots[nx][ny] = first_dot
+	first_dot.move(grid_to_pixel(nx, ny))
+	other_dot.move(grid_to_pixel(col, r))
+
+	# Recompute row-based z ordering for both, jailed goes under same row
+	var baseA = int(ny)
+	first_dot.set_meta("base_z", baseA)
+	if bool(first_dot.get("is_arrested") if first_dot.has_method("get") else false):
+		first_dot.z_index = baseA - 1
+	else:
+		first_dot.z_index = baseA
+	var baseB = int(r)
+	other_dot.set_meta("base_z", baseB)
+	if bool(other_dot.get("is_arrested") if other_dot.has_method("get") else false):
+		other_dot.z_index = baseB - 1
+	else:
+		other_dot.z_index = baseB
 
 		yield(get_tree().create_timer(0.2), "timeout")
 
@@ -390,6 +423,106 @@ func _process(_delta):
 			dragged_dot = null
 			is_dragging = false
 
+func _maybe_trigger_arrest_event() -> void:
+	if _arrest_active:
+		return
+	# 6% chance after a resolve to start an arrest event
+	if randi() % 100 < 6:
+		# Choose a color that exists on the board
+		var present: Array = []
+		for i in range(width):
+			for j in range(height):
+				var d = all_dots[i][j]
+				if d != null and not present.has(d.color):
+					present.append(d.color)
+		if present.size() == 0:
+			return
+		present.shuffle()
+		_trigger_arrest_event(String(present[0]))
+
+func _trigger_arrest_event(col: String) -> void:
+	_arrest_active = true
+	_arrested_color = col
+	_arrest_stage = 3
+	# Flash blue/red
+	_flash_siren_overlay()
+	# Pick a single dot of that color to arrest
+	var candidates: Array = []
+	for i in range(width):
+		for j in range(height):
+			var d = all_dots[i][j]
+			if d != null and String(d.color) == _arrested_color:
+				candidates.append(Vector2(i,j))
+	if candidates.size() == 0:
+		_arrest_active = false
+		return
+	candidates.shuffle()
+	var pick: Vector2 = candidates[0]
+	_arrested_dot = all_dots[int(pick.x)][int(pick.y)]
+	if _arrested_dot != null:
+		_arrested_dot.play_sad_animation()
+		if _arrested_dot.has_method("apply_jail_overlay"):
+			_arrested_dot.apply_jail_overlay(_arrest_stage)
+		# Push underneath within the row
+		var base = int(_arrested_dot.get_meta("base_z")) if _arrested_dot.has_meta("base_z") else _arrested_dot.z_index
+		_arrested_dot.z_index = base - 1
+	if AudioManager != null and not _siren_played:
+		AudioManager.play_sound("siren")
+		_siren_played = true
+
+func _apply_arrest_overlay_if_needed(d) -> void:
+	if _arrest_active and d == _arrested_dot and d.has_method("apply_jail_overlay"):
+		d.play_sad_animation()
+		d.apply_jail_overlay(_arrest_stage)
+		var base = int(d.get_meta("base_z")) if d.has_meta("base_z") else d.z_index
+		d.z_index = base - 1
+
+func _update_arrest_overlays() -> void:
+	if _arrested_dot != null and _arrested_dot.has_method("update_jail_overlay"):
+		_arrested_dot.update_jail_overlay(_arrest_stage)
+
+func _jailbreak_release() -> void:
+	# Show jailbreak overlay and clear
+	for i in range(width):
+		for j in range(height):
+			var d = all_dots[i][j]
+			if d != null and String(d.color) == _arrested_color:
+				if d.has_method("show_jailbreak_then_clear"):
+					d.show_jailbreak_then_clear()
+	# Track stat
+	if PlayerManager != null and PlayerManager.has_method("increment_jailbreak_for_color"):
+		PlayerManager.increment_jailbreak_for_color(_arrested_color)
+	_arrest_active = false
+	_arrested_color = ""
+	_arrest_stage = 0
+	_siren_played = false
+	if AudioManager != null:
+		AudioManager.play_sound("jail_break")
+
+func _flash_siren_overlay() -> void:
+	var layer = get_parent().get_node_or_null("CanvasLayer")
+	if layer == null:
+		return
+	var cr = ColorRect.new()
+	cr.name = "SirenFlash"
+	cr.color = Color(0,0,1,0.0)
+	cr.anchor_left = 0
+	cr.anchor_top = 0
+	cr.anchor_right = 1
+	cr.anchor_bottom = 1
+	cr.margin_left = 0
+	cr.margin_top = 0
+	cr.margin_right = 0
+	cr.margin_bottom = 0
+	layer.add_child(cr)
+	var t = get_tree().create_tween()
+	# Alternate blue/red quickly for ~1 second
+	t.tween_property(cr, "color", Color(0,0,1,0.35), 0.25)
+	t.tween_property(cr, "color", Color(1,0,0,0.35), 0.25)
+	t.tween_property(cr, "color", Color(0,0,1,0.35), 0.25)
+	t.tween_property(cr, "modulate:a", 0.0, 0.2)
+	t.connect("finished", cr, "queue_free")
+
 func spawn_wildcard_safely() -> bool:
 	# Try to convert a random dot into a wildcard without creating an immediate match.
 	var candidates: Array = []
@@ -442,6 +575,7 @@ func find_matches():
 		destroy_timer.start()
 	else:
 		swap_back()
+	# Arrest trigger now handled by a deterministic counter in destroy_matches()
 
 func process_match_animations(dots_in_match):
 	var unique_dots = []
@@ -492,6 +626,7 @@ func destroy_matches():
 	var points_earned = 0
 	var match_center = Vector2.ZERO
 	var match_count = 0
+	var colors_matched := {}
 	for i in range(width):
 		for j in range(height):
 			if all_dots[i][j] != null and all_dots[i][j].matched:
@@ -499,6 +634,7 @@ func destroy_matches():
 				points_earned += 10 * combo_counter
 				match_center += all_dots[i][j].position
 				match_count += 1
+				colors_matched[all_dots[i][j].color] = true
 				
 				# Instantiate original particles
 				var particles = match_particles.instance()
@@ -569,6 +705,39 @@ func destroy_matches():
 		collapse_timer.start()
 	else:
 		swap_back()
+
+	# Arrest: advance stage only if the arrested dot was matched (harder to break)
+	var arrested_matched := false
+	if _arrest_active and _arrested_dot != null:
+		for i in range(width):
+			for j in range(height):
+				if all_dots[i][j] != null and all_dots[i][j].matched and all_dots[i][j] == _arrested_dot:
+					arrested_matched = true
+					break
+			if arrested_matched:
+				break
+	if _arrest_active and arrested_matched:
+		_arrest_stage -= 1
+		if _arrest_stage > 0:
+			_update_arrest_overlays()
+			if AudioManager != null:
+				AudioManager.play_sound("jail_progress")
+		else:
+			_jailbreak_release()
+
+	# Deterministic trigger: every 20 successful match resolutions
+	if was_matched:
+		_match_events += 1
+		if (_match_events % 20) == 0 and not _arrest_active:
+			var present: Array = []
+			for i in range(width):
+				for j in range(height):
+					var d = all_dots[i][j]
+					if d != null and not present.has(d.color):
+						present.append(d.color)
+			if present.size() > 0:
+				present.shuffle()
+				_trigger_arrest_event(String(present[0]))
 
 func _dots_match(a, b) -> bool:
 	if a == null or b == null:
@@ -834,9 +1003,16 @@ func collapse_columns():
 			if all_dots[i][j] == null and not restricted_fill(Vector2(i,j)):
 				for k in range(j + 1, height):
 					if all_dots[i][k] != null:
-						all_dots[i][k].z_index = height - j
-						all_dots[i][k].move(grid_to_pixel(i, j))
-						all_dots[i][j] = all_dots[i][k]
+						var d = all_dots[i][k]
+						var base = j
+						d.set_meta("base_z", base)
+						# Keep jailed dots underneath within the row
+						if bool(d.get("is_arrested") if d.has_method("get") else false):
+							d.z_index = base - 1
+						else:
+							d.z_index = base
+						d.move(grid_to_pixel(i, j))
+						all_dots[i][j] = d
 						all_dots[i][k] = null
 						break
 	refill_timer.start()
@@ -846,7 +1022,10 @@ func refill_columns():
 		for j in range(height):
 			if all_dots[i][j] == null and not restricted_fill(Vector2(i,j)):
 				# Choose color from active pool then instantiate matching scene
-				var pool = possible_colors
+				var pool = possible_colors.duplicate()
+				if _arrest_active and pool.has(_arrested_color):
+					for _w in range(3):
+						pool.append(_arrested_color)
 				var rand = floor(rand_range(0, pool.size()))
 				var desired_color = pool[rand]
 				var dot_scene_to_use = null
@@ -875,7 +1054,12 @@ func refill_columns():
 						probe2.queue_free()
 					dot = dot_scene_to_use.instance()
 					loops += 1
-				dot.z_index = height - j
+				var base2 = height - j
+				dot.set_meta("base_z", base2)
+				if bool(dot.get("is_arrested") if dot.has_method("get") else false):
+					dot.z_index = base2 - 1
+				else:
+					dot.z_index = base2
 				add_child(dot)
 				dot.position = grid_to_pixel(i, j - y_offset)
 				var move_tween = dot.move(grid_to_pixel(i,j), 0.12)

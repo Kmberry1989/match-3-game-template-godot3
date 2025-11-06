@@ -54,6 +54,17 @@ func load_sounds():
 	# New special match sounds (add these files under Assets/Sounds)
 	sounds["line_clear"] = "res://Assets/Sounds/line_clear.ogg"
 	sounds["wildcard_spawn"] = "res://Assets/Sounds/wildcard_spawn.ogg"
+
+	# Arrest mini-game SFX
+	var arrest_sounds = {
+		"siren": "res://Assets/Sounds/siren.ogg",
+		"jail_progress": "res://Assets/Sounds/jail_progress.ogg",
+		"jail_break": "res://Assets/Sounds/jail_break.ogg"
+	}
+	for k in arrest_sounds.keys():
+		var p = arrest_sounds[k]
+		if ResourceLoader.exists(p):
+			sounds[k] = p
 	# Slot machine SFX (if present)
 	var slot_sounds = {
 		"slot_spin": "res://Assets/Sounds/slot_spin.ogg",
@@ -88,7 +99,14 @@ func play_sound(sound_name):
 	# Find an available player and play the sound
 	for player in sfx_players:
 		if not player.is_playing():
-			player.stream = load(sounds[sound_name])
+			var st = load(sounds[sound_name])
+			# Ensure jail-related SFX never loop even if imported with loop enabled
+			if sound_name == "jail_progress" or sound_name == "jail_break":
+				if st is AudioStreamOGGVorbis:
+					st.loop = false
+				elif st is AudioStreamSample:
+					st.loop_mode = AudioStreamSample.LOOP_DISABLED
+			player.stream = st
 			player.play()
 			return
 
