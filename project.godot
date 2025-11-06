@@ -182,7 +182,6 @@ PlayerManager="*res://Scripts/PlayerManager.gd"
 NetworkManager="*res://Scripts/NetworkManager.gd"
 AudioManager="*res://Scripts/AudioManager.gd"
 SaveManager="*res://Scripts/SaveManager.gd"
-AchievementManager="*res://addons/milestone/autoload/achievement_manager.gd"
 WebsocketClient="*res://addons/SimpleMultiplayer/autoload/websocket_client.gd"
 MultiplayerManager="*res://addons/SimpleMultiplayer/autoload/multiplayer_manager.gd"
 
