@@ -71,9 +71,9 @@ func _ready():
 	var hover_tex = load("res://Assets/Visuals/button_hover.svg")
 	var pressed_tex = load("res://Assets/Visuals/button_pressed.svg")
 
-    offline_button.set_normal_texture(_tex_play)
-    offline_button.set_pressed_texture(_tex_play)
-    offline_button.set_hover_texture(_tex_play)
+	offline_button.set_normal_texture(_tex_play)
+	offline_button.set_pressed_texture(_tex_play)
+	offline_button.set_hover_texture(_tex_play)
 	offline_button.connect("pressed", self, "_on_offline_button_pressed")
 	# Enlarge the entire button so its label scales up when no font is present
 	offline_button.rect_scale = Vector2(2.5, 2.5)
@@ -98,9 +98,9 @@ func _ready():
 	offline_label.visible = false
 	offline_button.add_child(offline_label)
 
-    profile_button.set_normal_texture(_tex_profile)
-    profile_button.set_pressed_texture(_tex_profile)
-    profile_button.set_hover_texture(_tex_profile)
+	profile_button.set_normal_texture(_tex_profile)
+	profile_button.set_pressed_texture(_tex_profile)
+	profile_button.set_hover_texture(_tex_profile)
 	profile_button.connect("pressed", self, "_on_profile_button_pressed")
 	profile_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(profile_button)
@@ -123,35 +123,11 @@ func _ready():
 	profile_label.visible = false
 	profile_button.add_child(profile_label)
 
-	# Hint: encourage avatar setup
-	# Shows if no avatar is set OR it's the player's first time seeing this hint.
-	var needs_avatar_hint := false
-	var has_avatar := false
-	var seen_hint := false
-	if typeof(PlayerManager.player_data) == TYPE_DICTIONARY:
-		has_avatar = PlayerManager.player_data.has("avatar") and String(PlayerManager.player_data.get("avatar", "")) != ""
-		seen_hint = bool(PlayerManager.player_data.get("has_seen_profile_hint", false))
-	if (not has_avatar) or (not seen_hint):
-		needs_avatar_hint = true
-	if needs_avatar_hint:
-		var avatar_hint = Label.new()
-		avatar_hint.text = has_avatar ? "Tip: Customize your avatar in PROFILE" : "Tip: Open PROFILE to set your avatar"
-		avatar_hint.align = Label.ALIGN_CENTER
-		avatar_hint.valign = Label.VALIGN_CENTER
-		avatar_hint.rect_min_size = Vector2(0, 28)
-		# Soft gold color to match UI accents
-		avatar_hint.add_color_override("font_color", Color(1.0, 0.84, 0.0))
-		_apply_big_font(avatar_hint, 36)
-		vbox.add_child(avatar_hint)
-		_animate_menu_hint(avatar_hint)
-		# Mark as seen so we don’t show this every visit
-		if typeof(PlayerManager.player_data) == TYPE_DICTIONARY:
-			PlayerManager.player_data["has_seen_profile_hint"] = true
-			SaveManager.save_player(PlayerManager.player_data)
+	# Hints removed
 
-    showcase_button.set_normal_texture(_tex_showcase)
-    showcase_button.set_pressed_texture(_tex_showcase)
-    showcase_button.set_hover_texture(_tex_showcase)
+	showcase_button.set_normal_texture(_tex_showcase)
+	showcase_button.set_pressed_texture(_tex_showcase)
+	showcase_button.set_hover_texture(_tex_showcase)
 	showcase_button.connect("pressed", self, "_on_showcase_button_pressed")
 	showcase_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(showcase_button)
@@ -174,9 +150,9 @@ func _ready():
 	showcase_label.visible = false
 	showcase_button.add_child(showcase_label)
 
-    shop_button.set_normal_texture(_tex_shop)
-    shop_button.set_pressed_texture(_tex_shop)
-    shop_button.set_hover_texture(_tex_shop)
+	shop_button.set_normal_texture(_tex_shop)
+	shop_button.set_pressed_texture(_tex_shop)
+	shop_button.set_hover_texture(_tex_shop)
 	shop_button.connect("pressed", self, "_on_shop_button_pressed")
 	shop_button.rect_scale = Vector2(2.5, 2.5)
 	vbox.add_child(shop_button)
@@ -344,14 +320,4 @@ func _apply_big_font(lbl: Label, size: int) -> void:
 		df.size = size
 		lbl.add_font_override("font", df)
 
-func _animate_menu_hint(lbl: Label) -> void:
-	if lbl == null:
-		return
-	# Gentle attention: fade/scale pulse a couple of times
-	lbl.modulate.a = 0.0
-	var t = get_tree().create_tween()
-	t.set_loops(2)
-	t.set_parallel(true)
-	t.tween_property(lbl, "modulate:a", 1.0, 0.5)
-	t.tween_property(lbl, "rect_scale", Vector2(1.05, 1.05), 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	t.tween_property(lbl, "rect_scale", Vector2(1.0, 1.0), 0.5).set_delay(0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+# Hints removed
