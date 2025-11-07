@@ -33,6 +33,11 @@ func _ready():
 	# Optional decorative overlay; disabled by default to avoid affecting perceived grid area
 	if GOLD_BORDER_ENABLED:
 		_add_gold_border()
+	else:
+		# Ensure any existing gold border layer is removed if present
+		var _gb = get_node_or_null("GoldBorderLayer")
+		if _gb != null:
+			_gb.queue_free()
 	# Add MEANER METER UI and connect signals
 	_add_meaner_meter_ui()
 	if not PlayerManager.is_connected("meaner_meter_changed", self, "_on_meaner_meter_changed"):
@@ -76,6 +81,8 @@ func _apply_current_frame():
 	var tex = load(tex_path)
 	if tex:
 		frame_sprite.texture = tex
+		# Ensure the frame overlay is visible if the scene default is hidden
+		frame_sprite.visible = true
 		# Some Control derivatives may not expose z_index in older Godot builds; guard the call
 		if frame_sprite.has_method("set_z_index"):
 			frame_sprite.set_z_index(1000)
@@ -84,7 +91,7 @@ func _apply_current_frame():
 		_ensure_avatar_layering()
 
 func _frame_to_texture_path(frame_name):
-	var base = "res://Assets/Visuals/"
+	var base = "res://Assets/Visuals/Avatar Frames/"
 	# Discover available frames automatically
 	var available = []
 	var dir = Directory.new()
@@ -153,21 +160,18 @@ func _update_avatar_photo():
 	if _avatar_photo == null:
 		return
 	var tex = null
-	# Preferred: explicit avatar path saved in player data
+	# Preferred: explicit avatar path saved in player data (may be user://)
 	if typeof(PlayerManager.player_data) == TYPE_DICTIONARY and PlayerManager.player_data.has("avatar"):
-		var saved_path = str(PlayerManager.player_data.get("avatar"))
-		if ResourceLoader.exists(saved_path):
-			tex = load(saved_path)
+		var saved_path = String(PlayerManager.player_data.get("avatar"))
+		tex = _load_texture_any(saved_path)
 	# Fallback: per-user avatar file
 	if tex == null:
 		var path1 = "user://avatars/" + PlayerManager.get_player_name() + ".png"
-		if ResourceLoader.exists(path1):
-			tex = load(path1)
+		tex = _load_texture_any(path1)
 	# Fallback: legacy single avatar path
 	if tex == null:
 		var path2 = "user://avatar.png"
-		if ResourceLoader.exists(path2):
-			tex = load(path2)
+		tex = _load_texture_any(path2)
 	# Final fallback: default in-game avatar
 	if tex == null:
 		var fallback = "res://Assets/Dots/vickieavatar.png"
@@ -182,6 +186,26 @@ func _update_avatar_photo():
 		_avatar_photo.visible = false
 	# Raise the avatar slightly within the frame (apply once)
 	_raise_avatar_by(10)
+
+func _load_texture_any(path: String):
+	if path == null:
+		return null
+	var p = String(path)
+	if p == "":
+		return null
+	if p.begins_with("user://"):
+		var f = File.new()
+		if f.file_exists(p):
+			var img = Image.new()
+			if img.load(p) == OK:
+				var it = ImageTexture.new()
+				it.create_from_image(img)
+				return it
+		return null
+	else:
+		if ResourceLoader.exists(p):
+			return load(p)
+	return null
 
 func _ensure_avatar_layering() -> void:
 	# Ensure the avatar draws just beneath the frame and above other siblings
@@ -339,12 +363,15 @@ func _on_meaner_meter_changed(cur, mx):
 	# Gauge already conveys percentage; keep label simple
 	if _meaner_label != null:
 		_meaner_label.text = "MEANER METER"
+		# Ensure the bar encapsulates the label text height
+		call_deferred("_size_meaner_meter_to_text")
 
 func _add_meaner_meter_ui():
 	# Avoid duplicates
 	if get_node_or_null("MeanerMeterPanel") != null:
 		return
-	var panel = Panel.new()
+	# Container (no visible frame) for top-center placement
+	var panel = Control.new()
 	panel.name = "MeanerMeterPanel"
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if panel.has_method("set_z_index"):
@@ -356,20 +383,8 @@ func _add_meaner_meter_ui():
 	panel.anchor_bottom = 0.0
 	panel.margin_left = -220.0
 	panel.margin_right = 220.0
-	panel.margin_top = 10.0
+	panel.margin_top = 20.0
 	panel.margin_bottom = 80.0
-	var psb = StyleBoxFlat.new()
-	psb.bg_color = Color(0, 0, 0, 0.4)
-	psb.border_color = Color(1.0, 0.84, 0.0, 1.0)
-	psb.border_width_top = 2
-	psb.border_width_bottom = 2
-	psb.border_width_left = 2
-	psb.border_width_right = 2
-	psb.corner_radius_top_left = 10
-	psb.corner_radius_top_right = 10
-	psb.corner_radius_bottom_left = 10
-	psb.corner_radius_bottom_right = 10
-	panel.add_stylebox_override("panel", psb)
 	add_child(panel)
 
 	var vb = VBoxContainer.new()
@@ -383,17 +398,14 @@ func _add_meaner_meter_ui():
 	vb.margin_bottom = -6
 	panel.add_child(vb)
 
-	var lbl = Label.new()
-	lbl.text = "MEANER METER:"
-	lbl.align = Label.ALIGN_CENTER
-	# Godot 3 has no add_font_size_override; keep default size or set a DynamicFont via theme if needed
-	vb.add_child(lbl)
-	_meaner_label = lbl
-
 	var pb = ProgressBar.new()
 	pb.min_value = 0
 	pb.max_value = 100
 	pb.value = 0
+	# Hide built-in percentage readout
+	if pb.has_method("set_percent_visible") or pb.has_method("set"):
+		# Godot 3 exposes property percent_visible
+		pb.percent_visible = false
 	pb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# Style the fill and background for visibility
 	var sb_bg = StyleBoxFlat.new()
@@ -404,6 +416,44 @@ func _add_meaner_meter_ui():
 	pb.add_stylebox_override("fg", sb_fill)
 	vb.add_child(pb)
 	_meaner_bar = pb
+
+	# Centered label inside the meter itself
+	var center_lbl = Label.new()
+	center_lbl.text = "MEANER METER"
+	center_lbl.align = Label.ALIGN_CENTER
+	center_lbl.valign = Label.VALIGN_CENTER
+	center_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center_lbl.anchor_left = 0
+	center_lbl.anchor_top = 0
+	center_lbl.anchor_right = 1
+	center_lbl.anchor_bottom = 1
+	center_lbl.margin_left = 0
+	center_lbl.margin_right = 0
+	center_lbl.margin_top = 0
+	center_lbl.margin_bottom = 0
+	pb.add_child(center_lbl)
+	_meaner_label = center_lbl
+
+	# Ensure the meter height comfortably wraps the label text
+	call_deferred("_size_meaner_meter_to_text")
+
+func _size_meaner_meter_to_text():
+	if _meaner_bar == null or _meaner_label == null:
+		return
+	# Measure the label's text height using its font and add padding
+	var font = _meaner_label.get_font("font")
+	var text_h = 0.0
+	if font != null:
+		# get_height is ascent + descent (line height) in Godot 3
+		text_h = float(font.get_height())
+	if text_h <= 0.0:
+		# Fallback: try measured string height or a sensible default
+		var sz = _meaner_label.get_font("font").get_string_size(_meaner_label.text) if _meaner_label.get_font("font") != null else Vector2(0, 24)
+		text_h = sz.y if sz.y > 0.0 else 24.0
+	var padding = max(6.0, text_h * 0.25)
+	var min_sz = _meaner_bar.rect_min_size
+	min_sz.y = text_h + padding
+	_meaner_bar.rect_min_size = min_sz
 
 # Adds a gold border to the outside edge of the display.
 # Implemented as a full-screen Panel with a StyleBoxFlat border.

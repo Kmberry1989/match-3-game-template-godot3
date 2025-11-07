@@ -32,7 +32,8 @@ onready var possible_dots = [
 	preload("res://Scenes/Dots/purple_dot.tscn"),
 	preload("res://Scenes/Dots/orange_dot.tscn"),
 	preload("res://Scenes/Dots/brown_dot.tscn"),
-	preload("res://Scenes/Dots/gray_dot.tscn")
+	preload("res://Scenes/Dots/gray_dot.tscn"),
+	preload("res://Scenes/Dots/white_dot.tscn")
 ]
 onready var match_particles: PackedScene = preload("res://Scenes/MatchParticles.tscn")
 onready var match_label_scene: PackedScene = preload("res://Scenes/MatchLabel.tscn")
@@ -47,7 +48,8 @@ var xp_orb_colors: Dictionary = {
 	"purple": Color(0.7, 0.4, 1.0),
 	"pink": Color(1.0, 0.5, 0.8),
 	"brown": Color(0.6, 0.4, 0.3),
-	"gray": Color(0.7, 0.7, 0.7)
+	"gray": Color(0.7, 0.7, 0.7),
+	"white": Color(1.0, 1.0, 1.0)
 }
 
 var destroy_timer: Timer = Timer.new()

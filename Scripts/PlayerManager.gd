@@ -44,6 +44,7 @@ func _ready():
 			var local = SaveManager.load_player()
 			if typeof(local) == TYPE_DICTIONARY and local.size() > 0:
 				player_data = local
+				_normalize_frame_state()
 		return
 
 func load_player_data(user_info):
@@ -68,6 +69,7 @@ func load_player_data(user_info):
 			print("Player data loaded from Firestore.")
 			# Convert Firestore fields to a plain Dictionary
 			player_data = Utilities.fields2dict({"fields": doc.document})
+			_normalize_frame_state()
 		else:
 			print("New player. Creating default data.")
 			var display = ""
@@ -77,6 +79,7 @@ func load_player_data(user_info):
 				display = "Player"
 			player_data["player_name"] = display
 			yield(coll.add(player_uid, player_data), "completed")
+			_normalize_frame_state()
 	else:
 		print("No UID found in user_info")
 
@@ -152,15 +155,15 @@ func _show_xp_conversion_animation():
 
 	var icon = TextureRect.new()
 	icon.texture = load("res://Assets/Visuals/xp_gold_convert.png")
-	icon.anchor_left = 0.5
-	icon.anchor_top = 0.5
-	icon.anchor_right = 0.5
-	icon.anchor_bottom = 0.5
+	icon.anchor_left = 0
+	icon.anchor_top = 1
+	icon.anchor_right = 0
+	icon.anchor_bottom = 0
 	icon.margin_left = 0
 	icon.margin_top = 0
 	icon.margin_right = 0
 	icon.margin_bottom = 0
-	icon.modulate.a = 0.0
+	icon.modulate.a = 1.5
 	layer.add_child(icon)
 
 	if AudioManager != null:
@@ -231,19 +234,55 @@ func unlock_trophy(trophy_id):
 		var trophy_resource = load("res://Assets/Trophies/" + trophy_id + ".tres")
 		emit_signal("trophy_unlocked", trophy_resource)
 
-func set_current_frame(frame_name):
-	player_data["current_frame"] = frame_name
-	emit_signal("frame_changed", frame_name)
-	save_player_data()
+func _normalize_frame_name(name: String) -> String:
+	var n = String(name)
+	if n == "" or n == null:
+		return "default"
+	# If provided as full texture name like avatar_frame_5, reduce to frame_5
+	if n.begins_with("avatar_frame_"):
+		n = n.substr("avatar_".length(), n.length() - "avatar_".length())
+	# Insert underscore between word and number if missing (frame5 -> frame_5)
+	if n.begins_with("frame") and not n.begins_with("frame_"):
+		var suffix = n.substr("frame".length(), n.length() - "frame".length())
+		if suffix.is_valid_integer():
+			n = "frame_" + suffix
+	return n
 
-func unlock_frame(frame_name):
+func _normalize_frame_state() -> void:
+	# Ensure unlocks and current_frame follow normalized naming
 	if not player_data.has("unlocks"):
 		player_data["unlocks"] = {"frames": [], "trophies": [], "aliases": []}
 	if not player_data["unlocks"].has("frames"):
 		player_data["unlocks"]["frames"] = []
-	if not frame_name in player_data["unlocks"]["frames"]:
-		player_data["unlocks"]["frames"].append(frame_name)
-		save_player_data()
+	var frames: Array = []
+	for f in player_data["unlocks"]["frames"]:
+		var nf = _normalize_frame_name(String(f))
+		if not nf in frames:
+			frames.append(nf)
+	# Always include default
+	if not "default" in frames:
+		frames.push_front("default")
+	player_data["unlocks"]["frames"] = frames
+	var cur = _normalize_frame_name(String(player_data.get("current_frame", "default")))
+	player_data["current_frame"] = cur
+	# Persist locally when not using Firestore
+	if SaveManager != null:
+		SaveManager.save_player(player_data)
+
+func set_current_frame(frame_name):
+	player_data["current_frame"] = _normalize_frame_name(String(frame_name))
+	emit_signal("frame_changed", player_data["current_frame"])
+	save_player_data()
+
+func unlock_frame(frame_name):
+	var norm = _normalize_frame_name(String(frame_name))
+	if not player_data.has("unlocks"):
+		player_data["unlocks"] = {"frames": [], "trophies": [], "aliases": []}
+	if not player_data["unlocks"].has("frames"):
+		player_data["unlocks"]["frames"] = []
+	if not norm in player_data["unlocks"]["frames"]:
+		player_data["unlocks"]["frames"].append(norm)
+	save_player_data()
 
 func get_current_frame():
 	return player_data["current_frame"]

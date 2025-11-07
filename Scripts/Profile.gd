@@ -21,12 +21,19 @@ onready var PlayerManager = get_node_or_null("/root/PlayerManager")
 var _avatar_paths: Array = []
 var _avatar_index: int = 0
 var _avatar_label: Label = null
+var _frame_overlay: TextureRect = null
 
 func _ready():
 	# Build cyclable gallery of avatar options from Assets/Dots/*avatar.png first
 	_build_avatar_gallery()
 	# Then populate labels and preview, guarding for missing PlayerManager
 	display_player_data()
+	# Ensure a frame overlay exists so the frame draws on top of the avatar
+	_ensure_frame_overlay()
+	# Refresh trophies when achievements unlock mid-session
+	var AchMgr = get_node_or_null("/root/AchievementManager")
+	if AchMgr != null and not AchMgr.is_connected("achievement_unlocked", self, "_on_achievement_unlocked"):
+		AchMgr.connect("achievement_unlocked", self, "_on_achievement_unlocked")
 	# Rebuild UI: add Prev/Next and a label below
 	var right_box = change_avatar_button.get_parent()
 	var insert_at = 0
@@ -58,6 +65,10 @@ func _ready():
 			right_box.move_child(_avatar_label, frame_idx)
 
 	back_button.connect("pressed", self, "_on_back_button_pressed")
+	# Enlarge back button for easier taps
+	if is_instance_valid(back_button):
+		back_button.rect_scale = Vector2(2.0, 2.0)
+		back_button.rect_min_size = Vector2(180, 64)
 	frame_selection_button.connect("item_selected", self, "_on_frame_selected")
 
 func display_player_data():
@@ -77,8 +88,8 @@ func display_player_data():
 		# Disable frame selection without PlayerManager
 		if is_instance_valid(frame_selection_button):
 			frame_selection_button.disabled = true
-		# Set default frame visual
-		avatar_frame_rect.texture = load("res://Assets/Visuals/avatar_frame_2.png")
+		# Set default frame visual on overlay (draw above avatar)
+		_set_profile_frame_texture("res://Assets/Visuals/Avatar Frames/avatar_frame_2.png")
 		return
 
 	# Normal path with PlayerManager available
@@ -120,38 +131,119 @@ func display_player_data():
 		objective_label.text = objective_name.replace("_", " ").capitalize() + ": " + status
 		objectives_container.add_child(objective_label)
 
-	# Display Trophies
+	# Display Trophies: full gallery with locked/unlocked variants
 	for child in trophies_container.get_children():
 		child.queue_free()
-	for trophy_name in data["unlocks"]["trophies"]:
-		var trophy_texture = load("res://Assets/Visuals/Trophies/" + trophy_name + ".png")
-		var trophy_rect = TextureRect.new()
-		trophy_rect.texture = trophy_texture
-		trophy_rect.rect_min_size = Vector2(592, 592)
-		trophy_rect.expand = true
-		trophies_container.add_child(trophy_rect)
+	# Grid columns for thumbnails
+	if trophies_container.has_method("set"):
+		trophies_container.columns = 4
+	# Build list from AchievementManager (preferred) or from filesystem
+	var all_trophies: Array = []
+	var AchMgr = get_node_or_null("/root/AchievementManager")
+	if AchMgr != null and AchMgr.has_method("get_all_trophies"):
+		all_trophies = AchMgr.get_all_trophies()
+	else:
+		var d = Directory.new()
+		if d.open("res://Assets/Trophies/Achievements") == OK:
+			d.list_dir_begin()
+			var fn = d.get_next()
+			while fn != "":
+				if not d.current_is_dir() and fn.to_lower().ends_with(".tres"):
+					var id = fn.substr(0, fn.length() - 5)
+					var base = id.replace("_", "")
+					all_trophies.append({
+						"id": id,
+						"name": _title_case(id.replace("_", " ")),
+						"icon_path": "res://Assets/Trophies/trophy_" + base + ".png",
+						"locked_icon_path": "res://Assets/Trophies/trophy_" + base + "_locked.png"
+					})
+				fn = d.get_next()
+			d.list_dir_end()
+	# Sort by id
+	all_trophies.sort_custom(self, "_cmp_trophy")
+	var unlocked: Array = data.get("unlocks", {}).get("trophies", [])
+	for t in all_trophies:
+		var tid: String = String(t.get("id"))
+		var is_unlocked: bool = unlocked.has(tid)
+		var path: String = ""
+		if is_unlocked:
+			path = String(t.get("icon_path"))
+		else:
+			path = String(t.get("locked_icon_path"))
+		if not ResourceLoader.exists(path):
+			continue
+		var thumb = TextureRect.new()
+		thumb.expand = true
+		thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		thumb.rect_min_size = Vector2(120, 120)
+		thumb.texture = load(path)
+		var tip = String(t.get("name", tid))
+		tip = _title_case(tip)
+		thumb.hint_tooltip = tip
+		thumb.mouse_filter = Control.MOUSE_FILTER_STOP
+		thumb.connect("gui_input", self, "_on_trophy_thumb_gui_input", [t, is_unlocked])
+		trophies_container.add_child(thumb)
+	# Prepare popup viewer for enlarged preview
+	_ensure_trophy_popup()
 
 	# Populate Frame Selection
 	frame_selection_button.clear()
 	var current_frame_index = 0
 	for i in range(data["unlocks"]["frames"].size()):
 		var frame_name = data["unlocks"]["frames"][i]
-		frame_selection_button.add_item(frame_name.capitalize())
+		var display_name = String(frame_name).replace("_", " ")
+		if display_name.length() > 0:
+			display_name = display_name.substr(0,1).to_upper() + display_name.substr(1)
+		frame_selection_button.add_item(display_name)
 		if frame_name == PlayerManager.get_current_frame():
 			current_frame_index = i
 	frame_selection_button.select(current_frame_index)
 	update_avatar_frame()
 
 func update_avatar_frame():
-	var frame_path = "res://Assets/Visuals/avatar_frame_2.png" # Default matches in-game
+	var frame_path = "res://Assets/Visuals/Avatar Frames/avatar_frame_2.png" # Default matches in-game
 	if PlayerManager != null:
 		var frame_name = PlayerManager.get_current_frame()
 		if frame_name != "default":
-			frame_path = "res://Assets/Visuals/avatar_" + frame_name + ".png"
-	avatar_frame_rect.texture = load(frame_path)
+			frame_path = "res://Assets/Visuals/Avatar Frames/avatar_" + frame_name + ".png"
+	_set_profile_frame_texture(frame_path)
+
+func _ensure_frame_overlay() -> void:
+	if _frame_overlay != null and is_instance_valid(_frame_overlay):
+		return
+	if not is_instance_valid(avatar_frame_rect):
+		return
+	var ov: TextureRect = avatar_frame_rect.get_node_or_null("FrameOverlay")
+	if ov == null:
+		ov = TextureRect.new()
+		ov.name = "FrameOverlay"
+		ov.expand = true
+		ov.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ov.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# Full-rect anchors
+		ov.anchor_left = 0
+		ov.anchor_top = 0
+		ov.anchor_right = 1
+		ov.anchor_bottom = 1
+		ov.margin_left = 0
+		ov.margin_top = 0
+		ov.margin_right = 0
+		ov.margin_bottom = 0
+		avatar_frame_rect.add_child(ov)
+	# Ensure overlay draws above avatar
+	var last = max(avatar_frame_rect.get_child_count() - 1, 0)
+	avatar_frame_rect.move_child(ov, last)
+	_frame_overlay = ov
+
+func _set_profile_frame_texture(path: String) -> void:
+	_ensure_frame_overlay()
+	if _frame_overlay == null:
+		return
+	if ResourceLoader.exists(path):
+		_frame_overlay.texture = load(path)
 
 func _on_frame_selected(index):
-	var frame_name = frame_selection_button.get_item_text(index).to_lower()
+	var frame_name = frame_selection_button.get_item_text(index).to_lower().replace(" ", "_")
 	if PlayerManager != null:
 		PlayerManager.set_current_frame(frame_name)
 		PlayerManager.save_player_data()
@@ -217,6 +309,11 @@ func _apply_avatar_from_res(path: String) -> void:
 		var err: int = img.save_png(save_path)
 		if err != OK:
 			push_warning("Failed to save avatar: " + str(err))
+		else:
+			# Persist path to player data for quick lookup and cross-scene consistency
+			if PlayerManager != null:
+				PlayerManager.player_data["avatar"] = save_path
+				PlayerManager.save_player_data()
 		# Update preview
 		var tex = ImageTexture.new()
 		tex.create_from_image(img)
@@ -237,6 +334,77 @@ func _update_avatar_label_from_path(path: String) -> void:
 		return
 	var nice = fname.substr(0,1).to_upper() + fname.substr(1).to_lower()
 	_avatar_label.text = "Avatar: " + nice
+
+func _cmp_trophy(a, b):
+	return int(String(a.get("id")).naturalnocasecmp_to(String(b.get("id"))))
+
+var _trophy_popup: PopupPanel = null
+var _trophy_popup_tex: TextureRect = null
+var _trophy_popup_label: Label = null
+
+func _title_case(s: String) -> String:
+	var text = String(s).strip_edges()
+	if text == "":
+		return text
+	var words = text.to_lower().split(" ")
+	var out = []
+	for w in words:
+		if w.length() == 0:
+			continue
+		out.append(w.substr(0,1).to_upper() + w.substr(1))
+	return String(" ").join(out)
+
+func _ensure_trophy_popup() -> void:
+	if _trophy_popup != null:
+		return
+	_trophy_popup = PopupPanel.new()
+	_trophy_popup.name = "TrophyViewer"
+	_trophy_popup.rect_min_size = Vector2(420, 420)
+	add_child(_trophy_popup)
+	var vb = VBoxContainer.new()
+	vb.add_constant_override("separation", 8)
+	vb.alignment = BoxContainer.ALIGN_CENTER
+	_trophy_popup.add_child(vb)
+	_trophy_popup_label = Label.new()
+	_trophy_popup_label.align = Label.ALIGN_CENTER
+	_trophy_popup_label.valign = Label.VALIGN_CENTER
+	_trophy_popup_label.name = "TitleLabel"
+	vb.add_child(_trophy_popup_label)
+	_trophy_popup_tex = TextureRect.new()
+	_trophy_popup_tex.expand = true
+	_trophy_popup_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_trophy_popup_tex.rect_min_size = Vector2(380, 360)
+	_trophy_popup_tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vb.add_child(_trophy_popup_tex)
+	var close = Button.new()
+	close.text = "Close"
+	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	close.connect("pressed", _trophy_popup, "hide")
+	vb.add_child(close)
+
+func _on_trophy_thumb_pressed(t: Dictionary, is_unlocked: bool) -> void:
+	var path = ""
+	if is_unlocked:
+		path = String(t.get("icon_path"))
+	else:
+		path = String(t.get("locked_icon_path"))
+	if ResourceLoader.exists(path):
+		_trophy_popup_tex.texture = load(path)
+		if _trophy_popup_label != null:
+			var title = _title_case(String(t.get("name", String(t.get("id", "")))))
+			_trophy_popup_label.text = title
+		_trophy_popup_tex.rect_scale = Vector2(0.85, 0.85)
+		_trophy_popup.popup_centered()
+		var tw = create_tween()
+		tw.tween_property(_trophy_popup_tex, "rect_scale", Vector2(1,1), 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+func _on_trophy_thumb_gui_input(event, t: Dictionary, is_unlocked: bool) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == BUTTON_LEFT:
+		_on_trophy_thumb_pressed(t, is_unlocked)
+
+func _on_achievement_unlocked(_id: String) -> void:
+	# When a trophy unlocks mid-session, refresh the gallery
+	display_player_data()
 
 func _on_file_selected(path):
 	# Validate selection: only allow res://Assets/Dots/*avatar.png
@@ -259,6 +427,10 @@ func _on_file_selected(path):
 		var err: int = img.save_png(save_path)
 		if err != OK:
 			push_warning("Failed to save avatar: " + str(err))
+		else:
+			if PlayerManager != null:
+				PlayerManager.player_data["avatar"] = save_path
+				PlayerManager.save_player_data()
 		# Update preview
 		var tex = ImageTexture.new()
 		tex.create_from_image(img)

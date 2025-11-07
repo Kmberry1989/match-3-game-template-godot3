@@ -13,6 +13,9 @@ var _dots: HBoxContainer
 var _snap_timer: Timer
 var _is_animating: bool = false
 var _frame_ids: Array = []
+var _confirm: ConfirmationDialog = null
+var _pending_frame_id: String = ""
+var _pending_price: int = 0
 
 const BADGE_H = 24
 const CARD_W = 220.0
@@ -20,16 +23,16 @@ const CARD_SEP = 10.0
 const THUMB_H = 320.0 # normalized preview area height
 
 var frames_catalog = {
-	"frame_2": {"price": 100, "display": "avatar_frame_2.png"},
-	"frame_3": {"price": 150, "display": "avatar_frame_3.png"},
-	"frame_4": {"price": 200, "display": "avatar_frame_4.png"},
-	"frame5": {"price": 220, "display": "avatar_frame5.png"},
-	"frame6": {"price": 240, "display": "avatar_frame6.png"},
-	"frame7": {"price": 260, "display": "avatar_frame7.png"},
-	"frame8": {"price": 280, "display": "avatar_frame8.png"},
-	"frame9": {"price": 300, "display": "avatar_frame9.png"},
-	"frame10": {"price": 350, "display": "avatar_frame10.png"},
-	"frame11": {"price": 400, "display": "avatar_frame11.png"}
+	"frame_2": {"price": 100, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_2.png"},
+	"frame_3": {"price": 150, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_3.png"},
+	"frame_4": {"price": 200, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_4.png"},
+	"frame_5": {"price": 220, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_5.png"},
+	"frame_6": {"price": 240, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_6.png"},
+	"frame_7": {"price": 260, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_7.png"},
+	"frame_8": {"price": 280, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_8.png"},
+	"frame_9": {"price": 300, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_9.png"},
+	"frame_10": {"price": 350, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_10.png"},
+	"frame_11": {"price": 400, "display": "res://Assets/Visuals/Avatar Frames/avatar_frame_11.png"}
 }
 
 func _ready():
@@ -126,6 +129,17 @@ func _build_ui():
 	_dots.alignment = BoxContainer.ALIGN_CENTER
 	vbox.add_child(_dots)
 
+	# Purchase confirmation dialog
+	_confirm = ConfirmationDialog.new()
+	_confirm.name = "ConfirmPurchase"
+	_confirm.window_title = "Confirm Purchase"
+	if _confirm.has_method("get_ok"):
+		_confirm.get_ok().text = "Buy"
+	if _confirm.has_method("get_cancel"):
+		_confirm.get_cancel().text = "Cancel"
+	_confirm.connect("confirmed", self, "_on_purchase_confirmed")
+	add_child(_confirm)
+
 	back_button.text = "Back"
 	back_button.connect("pressed", self, "_on_back_pressed")
 	vbox.add_child(back_button)
@@ -137,9 +151,9 @@ func _post_build_layout():
 	_rebuild_dots()
 	_update_pager_by_scroll()
 
-# Scan res://Assets/Visuals for avatar_*.png and add frames not already listed
+# Scan res://Assets/Visuals/Avatar Frames for avatar_*.png and add frames not already listed
 func _load_dynamic_frames() -> void:
-	var root = "res://Assets/Visuals"
+	var root = "res://Assets/Visuals/Avatar Frames"
 	var dir = Directory.new()
 	if dir.open(root) != OK:
 		return
@@ -160,7 +174,7 @@ func _load_dynamic_frames() -> void:
 					if res != null:
 						var n = int(res.get_string(1))
 						price = max(150, 100 + n * 20)
-					frames_catalog[id] = {"price": price, "display": fname}
+					frames_catalog[id] = {"price": price, "display": root + "/" + fname}
 		fname = dir.get_next()
 	dir.list_dir_end()
 
@@ -168,7 +182,7 @@ func _load_dynamic_frames() -> void:
 func _make_frame_card(frame_id: String) -> Control:
 	var data = frames_catalog[frame_id]
 	var price: int = data["price"]
-	var display_path: String = "res://Assets/Visuals/" + String(data["display"]) # filename only
+	var display_path: String = String(data["display"]) # full res:// path
 
 	var panel = PanelContainer.new()
 	panel.rect_min_size = Vector2(400, 480)
@@ -182,27 +196,49 @@ func _make_frame_card(frame_id: String) -> Control:
 	panel.add_child(vb)
 
 	var thumb = Control.new()
-	# Normalize preview area so all frames appear consistent and centered
+	# Reserved area for preview; we will not upscale above native texture size
 	thumb.rect_min_size = Vector2(0, THUMB_H)
 	thumb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	thumb.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vb.add_child(thumb)
 
+	var cc = CenterContainer.new()
+	cc.anchor_left = 0
+	cc.anchor_top = 0
+	cc.anchor_right = 1
+	cc.anchor_bottom = 1
+	cc.margin_left = 0
+	cc.margin_top = 0
+	cc.margin_right = 0
+	cc.margin_bottom = 0
+	thumb.add_child(cc)
+
+	var ttex = load(display_path)
 	var tex = TextureRect.new()
-	tex.texture = load(display_path)
-	# Keep aspect and center; rely on preview area height. Use a widely-supported expand mode.
-	tex.expand = true
+	tex.texture = ttex
 	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tex.anchor_left = 0
-	tex.anchor_top = 0
-	tex.anchor_right = 1
-	tex.anchor_bottom = 1
-	tex.margin_left = 0
-	tex.margin_top = 0
-	tex.margin_right = 0
-	tex.margin_bottom = 0
+	# Compute a display size that never exceeds the native texture size; downscale if taller than THUMB_H
+	var nat_w = 0.0
+	var nat_h = 0.0
+	if ttex != null:
+		if ttex.has_method("get_width"):
+			nat_w = float(ttex.get_width())
+		if ttex.has_method("get_height"):
+			nat_h = float(ttex.get_height())
+	var target_h = THUMB_H
+	if nat_h > 0.0:
+		target_h = min(THUMB_H, nat_h)
+	var target_w = nat_w
+	if nat_w > 0.0 and nat_h > 0.0:
+		target_w = target_h * (nat_w / nat_h)
+		# Never exceed native width
+		target_w = min(target_w, nat_w)
+	tex.expand = true
+	if target_w > 0.0 and target_h > 0.0:
+		tex.rect_min_size = Vector2(target_w, target_h)
+		tex.rect_size = tex.rect_min_size
 	tex.hint_tooltip = ""
-	thumb.add_child(tex)
+	cc.add_child(tex)
 
 	var badge_bg = ColorRect.new()
 	badge_bg.color = Color(0, 0, 0, 0.6)
@@ -224,7 +260,10 @@ func _make_frame_card(frame_id: String) -> Control:
 	badge_bg.add_child(badge)
 
 	var name_label = Label.new()
-	name_label.text = frame_id.capitalize()
+	var display_name = frame_id.replace("_", " ")
+	if display_name.length() > 0:
+		display_name = display_name.substr(0,1).to_upper() + display_name.substr(1)
+	name_label.text = display_name
 	name_label.align = Label.ALIGN_CENTER
 	vb.add_child(name_label)
 
@@ -447,43 +486,72 @@ func _on_card_button_pressed(frame_id: String, price: int, owned: bool):
 		PlayerManager.set_current_frame(frame_id)
 		_refresh()
 		return
-	# buying path
-	if PlayerManager != null and PlayerManager.spend_coins(price):
+	# Ask for confirmation before purchasing
+	if PlayerManager == null or not PlayerManager.can_spend(price):
+		_show_toast("Not enough coins")
+		return
+	_pending_frame_id = frame_id
+	_pending_price = price
+	if _confirm != null:
+		_confirm.dialog_text = "Buy this frame for %d coins?" % price
+		_confirm.popup_centered_minsize(Vector2(360, 0))
+	else:
+		# Fallback: proceed without dialog
+		_perform_purchase(frame_id, price)
+
+func _on_purchase_confirmed():
+	if _pending_frame_id == "" or _pending_price <= 0:
+		return
+	_perform_purchase(_pending_frame_id, _pending_price)
+	_pending_frame_id = ""
+	_pending_price = 0
+
+func _perform_purchase(frame_id: String, price: int):
+	if PlayerManager == null:
+		return
+	if not PlayerManager.can_spend(price):
+		return
+	if PlayerManager.spend_coins(price):
 		PlayerManager.unlock_frame(frame_id)
 		PlayerManager.set_current_frame(frame_id)
 		if AudioManager != null:
 			AudioManager.play_sound("purchase")
 		_refresh()
 		# Show a brief toast then return to menu
-		var root: Node = get_tree().get_current_scene()
-		var layer: Node = root.get_node("CanvasLayer") if root.has_node("CanvasLayer") else null
-		if layer == null:
-			layer = CanvasLayer.new()
-			layer.name = "CanvasLayer"
-			root.add_child(layer)
-		var toast_panel = PanelContainer.new()
-		toast_panel.name = "PurchaseToast"
-		toast_panel.modulate = Color(1,1,1,0.0)
-		toast_panel.anchor_left = 0.5
-		toast_panel.anchor_right = 0.5
-		toast_panel.anchor_top = 0.1
-		toast_panel.anchor_bottom = 0.1
-		toast_panel.margin_left = -220
-		toast_panel.margin_right = 220
-		toast_panel.margin_top = -24
-		toast_panel.margin_bottom = 24
-		var box = VBoxContainer.new()
-		box.alignment = BoxContainer.ALIGN_CENTER
-		var lbl = Label.new()
-		lbl.align = Label.ALIGN_CENTER
-		lbl.text = "New Frame Equipped!"
-		box.add_child(lbl)
-		toast_panel.add_child(box)
-		layer.add_child(toast_panel)
-		var t = get_tree().create_tween()
-		t.tween_property(toast_panel, "modulate:a", 1.0, 0.2)
-		t.tween_interval(0.65)
-		t.tween_property(toast_panel, "modulate:a", 0.0, 0.2)
-		yield(t, "finished")
+		_show_toast("New Frame Equipped!")
+		yield(get_tree().create_timer(1.1), "timeout")
 		get_tree().change_scene("res://Scenes/Menu.tscn")
+
+func _show_toast(text: String) -> void:
+	var root: Node = get_tree().get_current_scene()
+	if root == null:
+		return
+	var layer: Node = root.get_node("CanvasLayer") if root.has_node("CanvasLayer") else null
+	if layer == null:
+		layer = CanvasLayer.new()
+		layer.name = "CanvasLayer"
+		root.add_child(layer)
+	var toast_panel = PanelContainer.new()
+	toast_panel.name = "ShopToast"
+	toast_panel.modulate = Color(1,1,1,0.0)
+	toast_panel.anchor_left = 0.5
+	toast_panel.anchor_right = 0.5
+	toast_panel.anchor_top = 0.1
+	toast_panel.anchor_bottom = 0.1
+	toast_panel.margin_left = -220
+	toast_panel.margin_right = 220
+	toast_panel.margin_top = -24
+	toast_panel.margin_bottom = 24
+	var box = VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGN_CENTER
+	var lbl = Label.new()
+	lbl.align = Label.ALIGN_CENTER
+	lbl.text = text
+	box.add_child(lbl)
+	toast_panel.add_child(box)
+	layer.add_child(toast_panel)
+	var t = get_tree().create_tween()
+	t.tween_property(toast_panel, "modulate:a", 1.0, 0.2)
+	t.tween_interval(0.65)
+	t.tween_property(toast_panel, "modulate:a", 0.0, 0.2)
 

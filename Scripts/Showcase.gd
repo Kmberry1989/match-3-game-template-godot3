@@ -16,6 +16,12 @@ var _drag_start = Vector2.ZERO
 func _ready():
 	# Only show achievements in the showcase
 	load_achievements()
+	# Refresh when an achievement unlocks at runtime
+	var am = get_node_or_null("/root/AchievementManager")
+	if am != null and not am.is_connected("achievement_unlocked", self, "_on_achievement_unlocked"):
+		am.connect("achievement_unlocked", self, "_on_achievement_unlocked")
+	# Make tabs and back button larger for easier tapping
+	tab_container.rect_scale = Vector2(1.4, 1.4)
 	# Hide/disable any Frames tab if present in the scene
 	var frames_tab = tab_container.get_node_or_null("Frames")
 	if frames_tab:
@@ -35,6 +41,9 @@ func _ready():
 		else:
 			back_btn.text = "Back"
 			back_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		# Enlarge the back button
+		back_btn.rect_scale = Vector2(2.0, 2.0)
+		back_btn.rect_min_size = Vector2(180, 64)
 		if not back_btn.is_connected("pressed", self, "_on_back_button_pressed"):
 			back_btn.connect("pressed", self, "_on_back_button_pressed")
 	# Ensure a description label exists under the viewer name label
@@ -51,40 +60,120 @@ func _ready():
 				vb.add_child(viewer_desc)
 
 func load_achievements():
-	# Populate from achievement resources if the autoload exists
+	# Populate from AchievementManager if present; otherwise scan filesystem and show locked images
 	achievements.clear()
 	for child in trophy_grid.get_children():
 		child.queue_free()
 
 	var am = get_node_or_null("/root/AchievementManager")
-	if am == null:
-		return
+	var pm = get_node_or_null("/root/PlayerManager")
+	var unlocked_ids: Array = []
+	if pm != null and typeof(pm.player_data) == TYPE_DICTIONARY:
+		unlocked_ids = pm.player_data.get("unlocks", {}).get("trophies", [])
 
-	var achievement_list = []
-	if am.has_method("get_achievements"):
-		achievement_list = am.get_achievements()
-	for achievement_id in achievement_list:
-		var achievement_res = null
-		if am.has_method("get_achievement_resource"):
-			achievement_res = am.get_achievement_resource(achievement_id)
-		if typeof(achievement_res) == TYPE_OBJECT and achievement_res != null:
-			var id: String = achievement_res.id
-			var display: String = achievement_res.name
-			var unlocked := false
-			if am.has_method("is_unlocked"):
-				unlocked = am.is_unlocked(id)
+	var ids: Array = []
+	if am != null and am.has_method("get_achievements"):
+		ids = am.get_achievements()
+	# Fallback: scan the achievements folder for .tres files
+	if ids.size() == 0:
+		var d = Directory.new()
+		if d.open("res://Assets/Trophies/Achievements") == OK:
+			d.list_dir_begin()
+			var fn = d.get_next()
+			while fn != "":
+				if not d.current_is_dir() and fn.to_lower().ends_with(".tres"):
+					ids.append(fn.substr(0, fn.length() - 5))
+				fn = d.get_next()
+			d.list_dir_end()
+	ids.sort()
 
-			var unlocked_icon = achievement_res.icon
-			var locked_icon = achievement_res.unachieved_icon
+	for achievement_id in ids:
+		var id: String = String(achievement_id)
+		var res = null
+		if am != null and am.has_method("get_achievement_resource"):
+			res = am.get_achievement_resource(id)
+		if res == null:
+			var p = "res://Assets/Trophies/Achievements/" + id + ".tres"
+			if ResourceLoader.exists(p):
+				res = load(p)
+		var display: String = id.replace("_", " ")
+		var unlocked := false
+		if am != null and am.has_method("is_unlocked"):
+			unlocked = am.is_unlocked(id)
+		elif unlocked_ids != null:
+			unlocked = unlocked_ids.has(id)
 
-			var display_icon = unlocked_icon if unlocked else locked_icon
-			if display_icon == null: # Fallback for missing locked_icon
-				display_icon = unlocked_icon
+		var unlocked_icon = null
+		var locked_icon = null
+		if typeof(res) == TYPE_OBJECT and res != null:
+			if res.has_method("get"):
+				var dv = res.get("name")
+				if dv != null:
+					display = String(dv)
+				var ui = res.get("icon")
+				if ui != null:
+					unlocked_icon = ui
+				var li = res.get("unachieved_icon")
+				if li != null:
+					locked_icon = li
+		if unlocked_icon == null or locked_icon == null:
+			var base = id.replace("_", "")
+			var upath = "res://Assets/Trophies/trophy_" + base + ".png"
+			var lpath = "res://Assets/Trophies/trophy_" + base + "_locked.png"
+			if unlocked_icon == null and ResourceLoader.exists(upath):
+				unlocked_icon = load(upath)
+			if locked_icon == null and ResourceLoader.exists(lpath):
+				locked_icon = load(lpath)
 
-			var item = {"id": id, "unlocked_icon": unlocked_icon, "locked_icon": locked_icon, "name": display, "unlocked": unlocked, "description": achievement_res.description}
-			var idx = achievements.size()
-			achievements.append(item)
-			_add_thumbnail(trophy_grid, display_icon, display, unlocked, idx)
+		var display_icon = unlocked_icon if unlocked else locked_icon
+		if display_icon == null:
+			display_icon = unlocked_icon
+		if display_icon == null:
+			continue
+
+		display = _title_case(display)
+		var desc_text = ""
+		if res != null and res.has_method("get"):
+			var dv2 = res.get("description")
+			if dv2 != null:
+				desc_text = String(dv2)
+		# Pull progress/goal from AchievementManager if available
+		var cur = 0
+		var goal = 0
+		var progressive = false
+		if am != null:
+			if am.has_method("get_progress"):
+				cur = int(am.get_progress(id))
+			if am.has_method("get_goal"):
+				goal = int(am.get_goal(id))
+			if am.has_method("is_progressive"):
+				progressive = bool(am.is_progressive(id))
+		var item = {
+			"id": id,
+			"unlocked_icon": unlocked_icon,
+			"locked_icon": locked_icon,
+			"name": display,
+			"unlocked": unlocked,
+			"description": desc_text,
+			"progress": cur,
+			"goal": goal,
+			"progressive": progressive
+		}
+		var idx = achievements.size()
+		achievements.append(item)
+		_add_thumbnail(trophy_grid, display_icon, display, unlocked, idx)
+
+func _title_case(s: String) -> String:
+	var text = String(s).strip_edges()
+	if text == "":
+		return text
+	var words = text.to_lower().split(" ")
+	var out = []
+	for w in words:
+		if w.length() == 0:
+			continue
+		out.append(w.substr(0,1).to_upper() + w.substr(1))
+	return String(" ").join(out)
 
 # Frames are no longer shown here; Showcase is trophy-only
 
@@ -136,10 +225,23 @@ func _update_viewer():
 		var status_text = ("UNLOCKED" if unlocked else "LOCKED")
 		viewer_label.text = item["name"]
 		if viewer_desc != null:
-			viewer_desc.text = String(item.get("description", ""))
+			var lines = []
+			var desc = String(item.get("description", ""))
+			if desc != "":
+				lines.append(desc)
+			var progressive = bool(item.get("progressive", false))
+			var goal = int(item.get("goal", 0))
+			var cur = int(item.get("progress", 0))
+			if progressive and goal > 0:
+				lines.append("Progress: %d / %d" % [cur, goal])
+			lines.append("Status: " + status_text)
+			viewer_desc.text = "\n".join(lines)
 			viewer_desc.hint_tooltip = status_text
 		viewer_label.hint_tooltip = status_text
 		viewer_image.hint_tooltip = status_text
+
+func _on_achievement_unlocked(_id):
+	load_achievements()
 
 func _viewer_next():
 	if achievements.size() == 0:
@@ -157,6 +259,13 @@ func _input(event):
 	if not viewer_overlay.visible:
 		return
 	if event is InputEventMouseButton:
+		# Close viewer when tapping outside the large image
+		if event.button_index == BUTTON_LEFT and event.pressed:
+			var r = Rect2(viewer_image.rect_global_position, viewer_image.rect_size)
+			if not r.has_point(event.position):
+				_close_viewer()
+				accept_event()
+				return
 		if event.button_index == BUTTON_LEFT:
 			if event.pressed:
 				_drag_active = true
@@ -173,6 +282,13 @@ func _input(event):
 					else:
 						_viewer_next()
 	elif event is InputEventScreenTouch:
+		# Close viewer when tapping outside the large image
+		if event.pressed:
+			var r2 = Rect2(viewer_image.rect_global_position, viewer_image.rect_size)
+			if not r2.has_point(event.position):
+				_close_viewer()
+				accept_event()
+				return
 		if event.pressed:
 			_drag_active = true
 			_drag_start = event.position

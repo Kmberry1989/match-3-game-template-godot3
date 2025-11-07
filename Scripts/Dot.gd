@@ -25,6 +25,8 @@ var is_arrested: bool = false
 var wildcard_glow: Sprite = null
 var wildcard_glow_tween = null
 var jailed_scale_mult: float = 1.0
+var wobble_tween = null
+ 
 
 # Whether an XP orb has already been spawned for this dot in the current match.
 var orb_spawned = false
@@ -49,6 +51,8 @@ onready var wildcard_timer = Timer.new()
 var wildcard_textures = []
 var _wildcard_index = 0
 
+ 
+
 # Mapping from color to character name
 var color_to_character = {
 	"yellow": "bethany",
@@ -59,6 +63,7 @@ var color_to_character = {
 	"purple": "connie",
 	"red": "rochelle",
 	"blue": "vickie",
+	"white": "don",
 	"orange": "maia"
 }
 
@@ -72,7 +77,8 @@ var color_to_pulse_duration = {
 	"purple": 1,
 	"pink": 1,
 	"brown": 1,
-	"gray": 1
+	"gray": 1,
+	"white": 1
 }
 
 var mouse_inside = false
@@ -90,6 +96,7 @@ func _ready():
 	setup_blink_timer()
 	setup_wildcard_timer()
 	start_floating()
+	
 	start_pulsing()
 	
 	var area = Area2D.new()
@@ -148,6 +155,14 @@ func move(new_position, duration = 0.2):
 	return tween
 
 func play_match_animation(delay):
+	# Make the dot look sad during fade/destroy (including wildcard dots) and add a brief wobble
+	play_sad_animation()
+	# Freeze wildcard cycling so sad face stays visible during fade
+	if is_wildcard and wildcard_timer != null:
+		wildcard_timer.stop()
+	# Small wobble while fading
+	_start_wobble_for(0.3, delay)
+	# Flash + pop + fade
 	var tween = Tween.new()
 	add_child(tween)
 	tween.interpolate_callback(self, delay, "show_flash")
@@ -155,6 +170,33 @@ func play_match_animation(delay):
 	tween.interpolate_property(self, "modulate:a", 1.0, 0.0, 0.3, Tween.TRANS_SINE, Tween.EASE_OUT, delay)
 	tween.start()
 	tween.connect("tween_all_completed", self, "_on_match_fade_finished")
+
+func _start_wobble_for(total: float, start_delay: float = 0.0) -> void:
+	if wobble_tween and is_instance_valid(wobble_tween):
+		wobble_tween.stop_all()
+		wobble_tween.queue_free()
+	wobble_tween = Tween.new()
+	add_child(wobble_tween)
+	var t = 0.0
+	var step = 0.06
+	var amp = 8.0
+	var cur_from = sprite.rotation_degrees
+	var sgn = 1.0
+	while t < total:
+		var rot_target = sgn * amp
+		wobble_tween.interpolate_property(sprite, "rotation_degrees", cur_from, rot_target, step, Tween.TRANS_SINE, Tween.EASE_IN_OUT, start_delay + t)
+		# Back to center quickly
+		wobble_tween.interpolate_property(sprite, "rotation_degrees", rot_target, 0.0, step * 0.9, Tween.TRANS_SINE, Tween.EASE_IN_OUT, start_delay + t + step)
+		cur_from = 0.0
+		sgn = -sgn
+		t += step * 2.0
+	wobble_tween.start()
+	# Ensure final rotation is reset
+	wobble_tween.connect("tween_all_completed", self, "_reset_rotation")
+
+func _reset_rotation() -> void:
+	if is_instance_valid(sprite):
+		sprite.rotation_degrees = 0.0
 
 func _on_match_fade_finished():
 	if not orb_spawned:
@@ -341,6 +383,7 @@ func start_pulsing(sync_pulse = true):
 		align.interpolate_property(sprite, "scale", sprite.scale, target_min, 0.12, Tween.TRANS_SINE, Tween.EASE_OUT)
 		if jail_overlay != null:
 			align.interpolate_property(jail_overlay, "scale", jail_overlay.scale, target_min, 0.12, Tween.TRANS_SINE, Tween.EASE_OUT)
+		
 		if wildcard_glow != null:
 			align.interpolate_property(wildcard_glow, "scale", wildcard_glow.scale, target_min * 1.3, 0.12, Tween.TRANS_SINE, Tween.EASE_OUT)
 		align.start()
@@ -367,6 +410,7 @@ func _do_pulse_cycle(pulse_duration):
 	if glasses_overlay != null:
 		pulse_tween.interpolate_property(glasses_overlay, "scale", PULSE_SCALE_MIN * scale_multiplier, PULSE_SCALE_MAX * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
 		pulse_tween.interpolate_property(glasses_overlay, "scale", PULSE_SCALE_MAX * scale_multiplier, PULSE_SCALE_MIN * scale_multiplier, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
+	
 	if wildcard_glow != null:
 		pulse_tween.interpolate_property(wildcard_glow, "scale", PULSE_SCALE_MIN * scale_multiplier * 1.2, PULSE_SCALE_MAX * scale_multiplier * 1.4, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
 		pulse_tween.interpolate_property(wildcard_glow, "scale", PULSE_SCALE_MAX * scale_multiplier * 1.4, PULSE_SCALE_MIN * scale_multiplier * 1.2, pulse_duration, Tween.TRANS_SINE, Tween.EASE_IN_OUT, pulse_duration)
@@ -384,6 +428,8 @@ func _ensure_wildcard_glow() -> void:
 	wildcard_glow.z_index = -2
 	wildcard_glow.scale = Vector2(1.2, 1.2) * scale_multiplier
 	add_child(wildcard_glow)
+
+ 
 
 func _start_wildcard_glow() -> void:
 	_stop_wildcard_glow()
