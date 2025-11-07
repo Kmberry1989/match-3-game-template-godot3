@@ -78,9 +78,9 @@ rect_scale = Vector2( 0.7, 0.7 )
 texture = ExtResource( 5 )
 
 [node name="AvatarFrame2" type="TextureRect" parent="MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame"]
-margin_left = -169.0
+margin_left = -163.0
 margin_top = 39.0
-margin_right = 4.00003
+margin_right = 10.0
 margin_bottom = 179.0
 rect_scale = Vector2( 0.75, 0.75 )
 texture = ExtResource( 6 )
