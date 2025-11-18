@@ -18,6 +18,7 @@ margin_top = 3.0
 margin_right = 72.0
 margin_bottom = 87.9795
 rect_scale = Vector2( 7.38928, 11.8582 )
+mouse_filter = 2
 
 [node name="Grid" type="Node2D" parent="."]
 script = ExtResource( 1 )
@@ -27,9 +28,12 @@ offset = 80
 grid_scale = 0.9
 y_offset = -2
 
+[node name="TileOverlayLayer" type="Node2D" parent="Grid"]
+
 [node name="Background" type="TextureRect" parent="."]
 anchor_right = 1.0
 anchor_bottom = 1.0
+mouse_filter = 2
 script = ExtResource( 2 )
 __meta__ = {
 "_edit_use_anchors_": false

@@ -12,6 +12,17 @@ var matched = false
 var scale_multiplier = 1.0
 var is_wildcard = false
 
+# --- New Objective-Related Variable ---
+var is_ingredient = false # Is this a "Down to Earth" item?
+var is_boss = false
+var is_too_cool = false
+
+
+# --- Re-added Signals (Were missing from pasted code) ---
+signal dot_clicked(dot) # Emitted when the dot is clicked
+signal dot_hovered(dot) # Emitted when mouse enters the dot (for dragging)
+# ---------------------------------------------------
+
 # Emitted when the match fade-out finishes; used to trigger XP orbs immediately.
 signal match_faded(global_pos, color_name)
 
@@ -84,6 +95,9 @@ var color_to_pulse_duration = {
 var mouse_inside = false
 
 func _ready():
+	var existing_area = get_node_or_null("Area2D")
+	if existing_area:
+		existing_area.queue_free()
 	load_textures()
 	# Adjust dot scale based on texture size so in-game size stays consistent
 	if sprite and sprite.texture:
@@ -99,10 +113,18 @@ func _ready():
 	
 	start_pulsing()
 	
-	var area = Area2D.new()
-	add_child(area)
-	area.connect("mouse_entered", self, "_on_mouse_entered")
-	area.connect("mouse_exited", self, "_on_mouse_exited")
+	var new_area = Area2D.new()
+	add_child(new_area)
+	# Ensure the Area2D can receive mouse/touch input events for picking
+	if new_area.has_method("set"):
+		new_area.input_pickable = true
+	new_area.connect("mouse_entered", self, "_on_mouse_entered")
+	new_area.connect("mouse_exited", self, "_on_mouse_exited")
+
+	# --- Re-added Input Connection ---
+	# This line is critical for Grid.gd to receive clicks
+	new_area.connect("input_event", self, "_on_Dot_input_event")
+	# ---------------------------------
 
 	# Wait for the sprite texture to be loaded
 	yield(get_tree(), "idle_frame")
@@ -116,14 +138,60 @@ func _ready():
 		var side_length = max_dimension * target_scale
 		square_shape.extents = Vector2(side_length, side_length) / 2.0
 		collision_shape.shape = square_shape
-		area.add_child(collision_shape)
+		# Make sure the collision shape is pickable by input
+		if new_area.has_method("set_pickable"):
+			new_area.set_pickable(true)
+		new_area.add_child(collision_shape)
 
 func _process(_delta):
 	if mouse_inside:
 		pass
 
+# --- NEW: Function to create an Ingredient ---
+func make_ingredient():
+	is_ingredient = true
+	is_arrested = true # Use this to block horizontal swaps
+	is_wildcard = false
+	color = "ingredient"
+	
+	# Stop all avatar animations/timers
+	blink_timer.stop()
+	wildcard_timer.stop()
+	if float_tween: float_tween.stop_all()
+	if pulse_tween: pulse_tween.stop_all()
+	if wobble_tween: wobble_tween.stop_all()
+	
+	# Set the texture (You need to create this asset)
+	sprite.texture = preload("res://Assets/Visuals/ingredient_key.png") 
+	
+	# Hide avatar-specific nodes
+	if jail_overlay: jail_overlay.visible = false
+	if wildcard_glow: _stop_wildcard_glow()
+	if glasses_overlay: clear_glasses_overlay()
+	
+	# Restart a simple float
+	start_floating()
+# ------------------------------------------
+
+# --- MODIFIED Input Handlers ---
+
+# This function was missing from your pasted script. It's needed for Grid.gd.
+func _on_Dot_input_event(viewport, event, shape_idx):
+	if is_ingredient or is_boss or is_arrested: # Block clicks on ingredients, boss, or jailed avatars
+		return
+	if event is InputEventMouseButton and event.button_index == BUTTON_LEFT and event.is_pressed():
+		emit_signal("dot_clicked", self)
+
 func _on_mouse_entered():
+	if is_ingredient or is_boss or is_arrested: # Block hover when dot is special or jailed
+		return
+		
 	mouse_inside = true
+	
+	# Emit hover signal for drag-swapping
+	if Input.is_mouse_button_pressed(BUTTON_LEFT):
+		emit_signal("dot_hovered", self)
+		
 	if pulse_tween:
 		pulse_tween.stop_all()
 	
@@ -132,29 +200,43 @@ func _on_mouse_entered():
 	play_surprised_animation()
 
 func _on_mouse_exited():
+	if is_ingredient or is_boss or is_arrested: # Block hover on ingredients, boss, or jailed avatars
+		return
 	mouse_inside = false
 	sprite.scale = PULSE_SCALE_MIN * scale_multiplier # Reset scale
 	start_pulsing()
 	set_normal_texture()
 
 func play_surprised_animation():
+	if is_ingredient: # Ingredients can't be surprised
+		return
 	if animation_state == "normal":
 		AudioManager.play_sound("surprised")
 		animation_state = "surprised"
 		sprite.texture = surprised_texture
 
 func play_drag_sad_animation():
+	if is_ingredient: # Ingredients can't be sad
+		return
 	animation_state = "sad"
 	sprite.texture = sad_texture
 
 func move(new_position, duration = 0.2):
-	var tween = Tween.new()
-	add_child(tween)
-	tween.interpolate_property(self, "position", position, new_position, duration, Tween.TRANS_SINE, Tween.EASE_OUT)
-	tween.start()
+	var tween = get_tree().create_tween()
+	tween.tween_property(self, "position", new_position, duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	return tween
 
 func play_match_animation(delay):
+	# --- MODIFIED: Ingredients have a simple fade ---
+	if is_ingredient:
+		var tween = Tween.new()
+		add_child(tween)
+		tween.interpolate_property(self, "modulate:a", 1.0, 0.0, 0.3, Tween.TRANS_SINE, Tween.EASE_OUT, delay)
+		tween.start()
+		tween.connect("tween_all_completed", self, "_on_match_fade_finished")
+		return
+	# -----------------------------------------------
+
 	# Make the dot look sad during fade/destroy (including wildcard dots) and add a brief wobble
 	play_sad_animation()
 	# Freeze wildcard cycling so sad face stays visible during fade
@@ -201,7 +283,10 @@ func _reset_rotation() -> void:
 func _on_match_fade_finished():
 	if not orb_spawned:
 		orb_spawned = true
-		emit_signal("match_faded", global_position, color)
+		# --- MODIFIED: Don't spawn XP orbs for ingredients ---
+		if not is_ingredient:
+			emit_signal("match_faded", global_position, color)
+		# --------------------------------------------------
 
 func show_flash():
 	var flash = Sprite.new()
@@ -217,10 +302,14 @@ func show_flash():
 	tween.start()
 
 func play_sad_animation():
+	if is_ingredient:
+		return
 	animation_state = "sad"
 	sprite.texture = sad_texture
 
 func play_surprised_for_a_second():
+	if is_ingredient:
+		return
 	if animation_state == "normal":
 		AudioManager.play_sound("surprised")
 		animation_state = "surprised"
@@ -252,6 +341,8 @@ func create_shadow():
 	shadow.modulate.a = 0.0
 
 func load_textures():
+	if is_ingredient: # Don't load avatar textures for ingredients
+		return
 	var character = color_to_character.get(color, "bethany") # Default to bethany if color not found
 	
 	# Construct texture paths to use the 'Dots' subfolder.
@@ -266,18 +357,20 @@ func load_textures():
 	sprite.texture = normal_texture
 
 func set_normal_texture():
-	if is_wildcard:
+	if is_wildcard or is_ingredient:
 		return
 	animation_state = "normal"
 	sprite.texture = normal_texture
 	clear_jail_overlay()
 
 func reset_to_normal_state():
-	if is_wildcard:
+	if is_wildcard or is_ingredient:
 		return
 	set_normal_texture()
 
 func apply_glasses_overlay() -> void:
+	if is_ingredient:
+		return
 	has_glasses = true
 	if glasses_overlay == null:
 		glasses_overlay = Sprite.new()
@@ -330,6 +423,8 @@ func _on_wildcard_tick():
 	sprite.texture = wildcard_textures[_wildcard_index]
 
 func set_wildcard(enable = true):
+	if is_ingredient:
+		return
 	is_wildcard = enable
 	if enable:
 		animation_state = "wildcard"
@@ -524,6 +619,8 @@ func play_shake(duration := 0.18, magnitude := 6.0) -> void:
 	tw.tween_property(self, "position", base_pos, duration * 0.25)
 
 func _on_blink_timer_timeout():
+	if is_ingredient: # Ingredients don't blink
+		return
 	if animation_state == "normal":
 		animation_state = "blinking"
 		sprite.texture = blink_texture
@@ -540,6 +637,9 @@ func _on_blink_timer_timeout():
 	blink_timer.start(rand_range(4.0, 12.0))
 
 func play_idle_animation():
+	if is_ingredient: # Ingredients don't play idle animations
+		return
+		
 	var current_time = OS.get_ticks_msec()
 	if current_time - last_yawn_time < YAWN_COOLDOWN:
 		return # Cooldown is active, so we do nothing.

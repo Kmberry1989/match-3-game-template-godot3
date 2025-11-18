@@ -116,27 +116,23 @@ const BASE_XP = 180
 const XP_GROWTH = 1.35 # multiplicative growth per level
 const COIN_CONVERSION_RATE = 50 # XP per 1 coin awarded at level-up
 
-func get_xp_for_level(level: int) -> int:
+func get_xp_for_coin_conversion_at_level(level: int) -> int:
 	return int(round(BASE_XP * pow(XP_GROWTH, max(level - 1, 0)))) * 2
 
-func get_xp_for_next_level() -> int:
-	return get_xp_for_level(player_data["current_level"]) 
+func get_xp_for_coin_conversion() -> int:
+	return get_xp_for_coin_conversion_at_level(player_data["current_level"]) 
 
 func add_xp(amount):
 	player_data["current_xp"] += amount
-	var _leveled: bool = false
-	while player_data["current_xp"] >= get_xp_for_next_level():
-		var threshold: int = get_xp_for_next_level()
+	while player_data["current_xp"] >= get_xp_for_coin_conversion():
+		var threshold: int = get_xp_for_coin_conversion()
 		player_data["current_xp"] -= threshold
-		player_data["current_level"] += 1
 		# Convert part of the stage XP into coins at each level-up
 		var coins_awarded: int = int(threshold / float(COIN_CONVERSION_RATE))
 		if coins_awarded > 0:
 			player_data["coins"] += coins_awarded
 			emit_signal("coins_changed", player_data["coins"])
 			_show_xp_conversion_animation()
-		_leveled = true
-		emit_signal("level_up", player_data["current_level"])
 	# Achievements for reaching certain levels (safe wrappers)
 	if player_data["current_level"] >= 2:
 		achievement_unlock("first_chapter")
@@ -220,6 +216,13 @@ func spend_coins(amount):
 	save_player_data()
 	return true
 
+func add_coins(amount):
+	if amount <= 0:
+		return
+	player_data["coins"] = int(player_data.get("coins", 0)) + amount
+	emit_signal("coins_changed", player_data["coins"])
+	save_player_data()
+
 func check_objectives():
 	# Check for time played
 	if player_data["time_played"] >= 3600 and not player_data["objectives"]["time_played_1hr"]:
@@ -292,6 +295,22 @@ func get_current_xp():
 
 func get_current_level():
 	return player_data["current_level"]
+
+func complete_level(level_num, score_achieved, stars_earned):
+	print("Level %d complete! Score: %d, Stars: %d" % [level_num, score_achieved, stars_earned])
+	
+	# The primary purpose is to advance the player's level if they beat their highest.
+	# The add_xp function handles level-ups from XP, but this is for direct level progression.
+	if level_num >= player_data["current_level"]:
+		player_data["current_level"] = level_num + 1
+		emit_signal("level_up", player_data["current_level"])
+	
+	# You could also award coins or other bonuses for winning here.
+	var coins_for_win = 10 # Example
+	player_data["coins"] = player_data.get("coins", 0) + coins_for_win
+	emit_signal("coins_changed", player_data["coins"])
+
+	save_player_data()
 
 # External callers (e.g., Profile.gd) should call this when avatar image changes
 func notify_avatar_changed() -> void:

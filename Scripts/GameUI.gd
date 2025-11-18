@@ -21,15 +21,47 @@ var _avatar_nudged: bool = false
 var _meaner_bar = null
 var _meaner_label = null
 
+# Lightweight HUD elements for level objectives/moves
+var _hud_root: Control = null
+var _moves_label: Label = null
+var _goal_label: Label = null
+var _goal_count_label: Label = null
+const LevelManagerScript = preload("res://Scripts/LevelManager.gd")
+
+func _set_mouse_filters_for_passthrough(root: Node) -> void:
+	if root == null:
+		return
+	if root is Control:
+		var c = root as Control
+		if c is Button:
+			c.mouse_filter = Control.MOUSE_FILTER_STOP
+		else:
+			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in root.get_children():
+		_set_mouse_filters_for_passthrough(child)
+
 func _ready():
-	set_player_name(PlayerManager.get_player_name())
-	update_level_label(PlayerManager.get_current_level())
-	update_xp_label()
-	PlayerManager.connect("level_up", self, "update_level_label")
-	PlayerManager.connect("coins_changed", self, "_on_coins_changed")
-	PlayerManager.connect("frame_changed", self, "_on_frame_changed")
-	_on_coins_changed(PlayerManager.get_coins())
-	_apply_current_frame()
+	# Safely initialize from PlayerManager autoload if present
+	if PlayerManager == null:
+		PlayerManager = get_node_or_null("/root/PlayerManager")
+	# Refresh AudioManager reference if needed
+	if AudioManager == null:
+		AudioManager = get_node_or_null("/root/AudioManager")
+	if PlayerManager != null:
+		set_player_name(PlayerManager.get_player_name())
+		update_level_label(PlayerManager.get_current_level())
+		update_xp_label()
+		if not PlayerManager.is_connected("level_up", self, "update_level_label"):
+			PlayerManager.connect("level_up", self, "update_level_label")
+		if not PlayerManager.is_connected("coins_changed", self, "_on_coins_changed"):
+			PlayerManager.connect("coins_changed", self, "_on_coins_changed")
+		if not PlayerManager.is_connected("frame_changed", self, "_on_frame_changed"):
+			PlayerManager.connect("frame_changed", self, "_on_frame_changed")
+		_on_coins_changed(PlayerManager.get_coins())
+		_apply_current_frame()
+	else:
+		# Fallback display until PlayerManager becomes available
+		update_xp_label()
 	# Optional decorative overlay; disabled by default to avoid affecting perceived grid area
 	if GOLD_BORDER_ENABLED:
 		_add_gold_border()
@@ -38,35 +70,130 @@ func _ready():
 		var _gb = get_node_or_null("GoldBorderLayer")
 		if _gb != null:
 			_gb.queue_free()
+
+	# Ensure non-interactive UI does not block board input
+	_set_mouse_filters_for_passthrough(self)
 	# Add MEANER METER UI and connect signals
 	_add_meaner_meter_ui()
-	if not PlayerManager.is_connected("meaner_meter_changed", self, "_on_meaner_meter_changed"):
-		PlayerManager.connect("meaner_meter_changed", self, "_on_meaner_meter_changed")
-	if not PlayerManager.is_connected("meaner_meter_filled", self, "_on_meaner_meter_filled"):
-		PlayerManager.connect("meaner_meter_filled", self, "_on_meaner_meter_filled")
-	# Initialize bar to current value
-	_on_meaner_meter_changed(PlayerManager.get_meaner_meter_current(), PlayerManager.get_meaner_meter_max())
+	if PlayerManager != null:
+		if not PlayerManager.is_connected("meaner_meter_changed", self, "_on_meaner_meter_changed"):
+			PlayerManager.connect("meaner_meter_changed", self, "_on_meaner_meter_changed")
+		if not PlayerManager.is_connected("meaner_meter_filled", self, "_on_meaner_meter_filled"):
+			PlayerManager.connect("meaner_meter_filled", self, "_on_meaner_meter_filled")
+		# Initialize bar to current value
+		_on_meaner_meter_changed(PlayerManager.get_meaner_meter_current(), PlayerManager.get_meaner_meter_max())
 	# Ensure pause/home/shop buttons are clickable above other UI (guard if not found)
 	_wire_button("PauseButton", "_on_pause_pressed")
 	_wire_button("HomeButton", "_on_home_pressed")
 	_wire_button("ShopButton", "_on_shop_pressed")
 	# React to avatar changes
-	if PlayerManager.has_signal("avatar_changed") and not PlayerManager.is_connected("avatar_changed", self, "_on_avatar_changed"):
+	if PlayerManager != null and PlayerManager.has_signal("avatar_changed") and not PlayerManager.is_connected("avatar_changed", self, "_on_avatar_changed"):
 		PlayerManager.connect("avatar_changed", self, "_on_avatar_changed")
 
+func _ensure_level_hud():
+	if _hud_root != null and is_instance_valid(_hud_root):
+		return
+	_hud_root = Control.new()
+	_hud_root.name = "LevelHUD"
+	# Place near the top-left overlay area
+	_hud_root.anchor_left = 0
+	_hud_root.anchor_top = 0
+	_hud_root.anchor_right = 0
+	_hud_root.anchor_bottom = 0
+	_hud_root.margin_left = 19
+	_hud_root.margin_top = 95
+	add_child(_hud_root)
+	var vb = VBoxContainer.new()
+	vb.name = "VBox"
+	vb.add_constant_override("separation", 2)
+	_hud_root.add_child(vb)
+	_moves_label = Label.new()
+	_moves_label.name = "MovesLabel"
+	_moves_label.text = "Moves: -"
+	vb.add_child(_moves_label)
+	_goal_label = Label.new()
+	_goal_label.name = "GoalLabel"
+	_goal_label.text = "Goal: --"
+	vb.add_child(_goal_label)
+	_goal_count_label = Label.new()
+	_goal_count_label.name = "GoalCountLabel"
+	_goal_count_label.text = "Remaining: --"
+	vb.add_child(_goal_count_label)
+
+# Called from Grid.gd
+func update_moves(moves_left: int) -> void:
+	_ensure_level_hud()
+	if _moves_label:
+		_moves_label.text = "Moves: " + str(moves_left)
+
+# Called from Grid.gd with dictionary from LevelManager
+func set_level_goal(level_data: Dictionary) -> void:
+	_ensure_level_hud()
+	var goal_text = level_data.get("goal_text", "")
+	if goal_text == "":
+		var gt = level_data.get("goal_type", LevelManagerScript.GoalType.SCORE)
+		match gt:
+			LevelManagerScript.GoalType.SCORE:
+				goal_text = "Reach the target score!"
+			LevelManagerScript.GoalType.DOWN_TO_EARTH:
+				goal_text = "Collect all keys!"
+			LevelManagerScript.GoalType.JAILBREAK:
+				goal_text = "Break the avatar out!"
+			LevelManagerScript.GoalType.EXTERMINATE:
+				goal_text = "Defeat the boss!"
+			LevelManagerScript.GoalType.TOO_COOL:
+				goal_text = "Match the Too Cool dot!"
+			_:
+				goal_text = "Complete the objective"
+	if _goal_label:
+		_goal_label.text = "Goal: " + str(goal_text)
+	# Default remaining label init
+	if _goal_count_label:
+		_goal_count_label.text = "Remaining: --"
+
+# Called from Grid.gd whenever the remaining objective count changes
+func update_goal_count(count: int) -> void:
+	_ensure_level_hud()
+	if _goal_count_label:
+		_goal_count_label.text = "Remaining: " + str(count)
+
+
+# Ensure label node references exist (handles alternate scene structures)
+func _ensure_core_labels():
+	if player_name_label == null:
+		player_name_label = find_node("PlayerNameLabel", true, false)
+	if level_label == null:
+		level_label = find_node("LevelLabel", true, false)
+	if xp_label == null:
+		xp_label = find_node("XpLabel", true, false)
+	if coins_label == null:
+		coins_label = find_node("CoinsLabel", true, false)
+
 func set_player_name(p_name):
-	player_name_label.text = p_name
+	_ensure_core_labels()
+	if player_name_label != null:
+		player_name_label.text = p_name
 
 func update_level_label(level):
-	level_label.text = "Level: " + str(level)
+	_ensure_core_labels()
+	if level_label != null:
+		level_label.text = "Level: " + str(level)
 
 func update_xp_label():
-	var current_xp = PlayerManager.get_current_xp()
-	var xp_needed = PlayerManager.get_xp_for_next_level()
-	xp_label.text = "XP: " + str(current_xp) + "/" + str(xp_needed)
+	# Guard against PlayerManager being unavailable in some scenes
+	if PlayerManager == null:
+		PlayerManager = get_node_or_null("/root/PlayerManager")
+	var current_xp = 0
+	if PlayerManager != null:
+		current_xp = PlayerManager.get_current_xp()
+	_ensure_core_labels()
+	if xp_label != null:
+		xp_label.text = "XP: " + str(current_xp)
 
 func _on_coins_changed(new_amount):
-	coins_label.text = "Coins: " + str(new_amount)
+	_ensure_core_labels()
+	if coins_label != null:
+		coins_label.text = "Coins: " + str(new_amount)
 
 func _on_avatar_changed():
 	# Refresh the player avatar texture when notified by PlayerManager
@@ -76,10 +203,14 @@ func _on_frame_changed(_frame_name):
 	_apply_current_frame()
 
 func _apply_current_frame():
-	var frame_name = PlayerManager.get_current_frame()
+	if PlayerManager == null:
+		PlayerManager = get_node_or_null("/root/PlayerManager")
+	var frame_name = "default"
+	if PlayerManager != null and PlayerManager.has_method("get_current_frame"):
+		frame_name = PlayerManager.get_current_frame()
 	var tex_path = _frame_to_texture_path(frame_name)
 	var tex = load(tex_path)
-	if tex:
+	if tex and frame_sprite != null:
 		frame_sprite.texture = tex
 		# Ensure the frame overlay is visible if the scene default is hidden
 		frame_sprite.visible = true
@@ -161,12 +292,15 @@ func _update_avatar_photo():
 		return
 	var tex = null
 	# Preferred: explicit avatar path saved in player data (may be user://)
-	if typeof(PlayerManager.player_data) == TYPE_DICTIONARY and PlayerManager.player_data.has("avatar"):
+	if PlayerManager != null and typeof(PlayerManager.player_data) == TYPE_DICTIONARY and PlayerManager.player_data.has("avatar"):
 		var saved_path = String(PlayerManager.player_data.get("avatar"))
 		tex = _load_texture_any(saved_path)
 	# Fallback: per-user avatar file
 	if tex == null:
-		var path1 = "user://avatars/" + PlayerManager.get_player_name() + ".png"
+		var uname = "player"
+		if PlayerManager != null and PlayerManager.has_method("get_player_name"):
+			uname = String(PlayerManager.get_player_name())
+		var path1 = "user://avatars/" + uname + ".png"
 		tex = _load_texture_any(path1)
 	# Fallback: legacy single avatar path
 	if tex == null:
@@ -351,7 +485,8 @@ func _show_bonus_slot():
 
 func _on_bonus_slot_closed():
 	# Reset the meter after the bonus has been played
-	PlayerManager.reset_meaner_meter()
+	if PlayerManager != null and PlayerManager.has_method("reset_meaner_meter"):
+		PlayerManager.reset_meaner_meter()
 	# Track frequent flyer achievement progress
 	if PlayerManager != null and PlayerManager.has_method("increment_bonus_spins"):
 		PlayerManager.increment_bonus_spins()
