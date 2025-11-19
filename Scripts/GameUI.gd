@@ -121,11 +121,6 @@ func _ensure_level_hud():
 	vb.add_child(_goal_count_label)
 
 # Called from Grid.gd
-func update_moves(moves_left: int) -> void:
-	_ensure_level_hud()
-	if _moves_label:
-		_moves_label.text = "Moves: " + str(moves_left)
-
 # Called from Grid.gd with dictionary from LevelManager
 func set_level_goal(level_data: Dictionary) -> void:
 	_ensure_level_hud()

@@ -122,6 +122,10 @@ func get_xp_for_coin_conversion_at_level(level: int) -> int:
 func get_xp_for_coin_conversion() -> int:
 	return get_xp_for_coin_conversion_at_level(player_data["current_level"]) 
 
+func get_xp_for_next_level() -> int:
+	var next_level = max(int(player_data.get("current_level", 1)) + 1, 1)
+	return get_xp_for_coin_conversion_at_level(next_level)
+
 func add_xp(amount):
 	player_data["current_xp"] += amount
 	while player_data["current_xp"] >= get_xp_for_coin_conversion():

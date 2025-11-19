@@ -22,19 +22,20 @@ const LEVELS = {
 	1: {
 		"moves": 30,
 		"goal_type": GoalType.SCORE,
-		"goal_text": "Reach 1,000 points!",
+		"goal_text": "Reach 1,000 Points!",
 		"target_score": 1000
 	},
 	2: {
 		"moves": 25,
 		"goal_type": GoalType.DOWN_TO_EARTH,
-		"goal_text": "Collect 3 Ingredients!",
-		"ingredient_positions": [ [1, 0], [3, 0], [5, 0] ] # Spawn 3 ingredients at top
+		"goal_text": "Collect 3 Keys!",
+		"ingredient_positions": [ [1, 0], [3, 0], [5, 0] ], # Spawn 3 ingredients at top
+		"disabled": true
 	},
 	3: {
 		"moves": 30,
 		"goal_type": GoalType.JAILBREAK,
-		"goal_text": "Break the Avatar out of jail!",
+		"goal_text": "Break out of Jail!",
 		"initial_jail_color": "red" # Trigger Meaner's Mischief for 'red' at start
 	},
 	4: {
@@ -52,7 +53,7 @@ const LEVELS = {
 	6: {
 		"moves": 25,
 		"goal_type": GoalType.TOO_COOL,
-		"goal_text": "Too Cool! Match the dot with glasses."
+		"goal_text": "Match the Cool Dude!"
 	}
 	# ... (add more levels here) ...
 }
@@ -65,8 +66,19 @@ func get_level_data(level_num):
 	if level_number < 1:
 		level_number = 1
 
-	var num_levels = LEVELS.size()
-	var level_to_load = ((level_number - 1) % num_levels) + 1
+	var available_levels := []
+	for level_id in LEVELS.keys():
+		var entry = LEVELS[level_id]
+		if typeof(entry) == TYPE_DICTIONARY and entry.has("disabled") and entry["disabled"]:
+			continue
+		available_levels.append(int(level_id))
+	if available_levels.size() == 0:
+		available_levels.append(1)
+	available_levels.sort()
+
+	var num_levels = available_levels.size()
+	var level_index = (level_number - 1) % num_levels
+	var level_to_load = available_levels[level_index]
 
 	if not LEVELS.has(level_to_load):
 		# This should not happen with the logic above, but as a fallback

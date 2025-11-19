@@ -29,7 +29,6 @@ var current_level_num = 1
 var current_goal_type = -1 # Will be set from LevelManager
 var objective_goal_count = 0
 var target_score = 10000 # Default for score levels
-var moves_left = 30
 # -----------------------------
 
 # Preload scenes for dots and new visual effects
@@ -118,9 +117,18 @@ var _siren_played: bool = false
 var _glasses_active: bool = false
 var _glasses_target = null
 var _matches_since_glasses: int = 0
+const SUNGLASSES_ENABLED: bool = true
 var _too_cool_dot = null
 var _too_cool_active: bool = false
+# --- NEW: Autoplay for Otto ---
+# --- NEW: Autoplay for Otto ---
 var _ingredient_reward_playing: bool = false
+var _player_drop_active: bool = false
+var _auto_playing: bool = false
+var _auto_play_enabled: bool = false
+# --- Ingredient chest tracking ---
+var _ready_key_columns: Array = []
+# ------------------------------
 
 # --- NEW: Boss Battle ---
 const ANVIL_RESPAWN_DELAY = 6.0
@@ -165,9 +173,6 @@ func _ready():
 	level_data = LevelManager.get_level_data(current_level_num)
 	
 	current_goal_type = level_data.get("goal_type", LevelManagerScript.GoalType.SCORE)
-	moves_left = level_data.get("moves", 30) # Default to 30 moves
-	
-	game_ui.update_moves(moves_left) # We assume GameUI has update_moves(int)
 	game_ui.update_xp_label() # This is your existing score update
 	game_ui.set_level_goal(level_data) # We assume GameUI has set_level_goal(Dictionary)
 	
@@ -398,6 +403,21 @@ func _award_ingredient_coins(amount: int) -> void:
 		if PlayerManager.has_method("save_player_data"):
 			PlayerManager.save_player_data()
 
+func _refresh_ready_columns() -> void:
+	var bottom_row = height - 1
+	for x in range(width):
+		var dot = all_dots[x][bottom_row]
+		if dot != null and dot.is_ingredient:
+			_register_ready_column(x)
+
+func _register_ready_column(col: int) -> void:
+	if not _ready_key_columns.has(col):
+		_ready_key_columns.append(col)
+
+func _clear_ready_column(col: int) -> void:
+	while _ready_key_columns.has(col):
+		_ready_key_columns.erase(col)
+
 func _schedule_anvil_spawn(delay = ANVIL_RESPAWN_DELAY):
 	if boss == null or not boss.is_active:
 		return
@@ -515,6 +535,7 @@ func _resync_idle_pulses():
 func _synchronize_after_move():
 	_verify_render_logic()
 	_resync_idle_pulses()
+	_player_drop_active = false
 
 func _on_boss_defeated():
 	_clear_anvil()
@@ -741,13 +762,12 @@ func _input(event):
 						var dot1 = all_dots[start_grid_pos.x][start_grid_pos.y]
 						var dot2 = all_dots[end_grid_pos.x][end_grid_pos.y]
 						if dot1 != null and dot2 != null:
-							if not ((dot1.is_ingredient and difference.x != 0) or (dot2.is_ingredient and difference.x != 0)):
-								var swap_state = swap_dots(start_grid_pos.x, start_grid_pos.y, end_grid_pos.x, end_grid_pos.y)
-								var swap_result = swap_state
-								if typeof(swap_result) == TYPE_OBJECT and swap_result is GDScriptFunctionState:
-									swap_result = yield(swap_result, "completed")
-								if bool(swap_result):
-									performed_swap = true
+							var swap_state = swap_dots(start_grid_pos.x, start_grid_pos.y, end_grid_pos.x, end_grid_pos.y)
+							var swap_result = swap_state
+							if typeof(swap_result) == TYPE_OBJECT and swap_result is GDScriptFunctionState:
+								swap_result = yield(swap_result, "completed")
+							if bool(swap_result):
+								performed_swap = true
 				
 				# Cleanup drag state
 				is_dragging = false
@@ -767,7 +787,9 @@ func swap_dots(col1, row1, col2, row2) -> bool:
 		return false
 	var first_dot = all_dots[col1][row1]
 	var other_dot = all_dots[col2][row2]
-	
+	var start_grid_pos = Vector2(col1, row1)
+	var end_grid_pos = Vector2(col2, row2)
+
 	if first_dot != null && other_dot != null:
 		# --- NEW: Block swaps with boss tiles ---
 		if boss_tiles.has(Vector2(col1,row1)) or boss_tiles.has(Vector2(col2,row2)):
@@ -796,6 +818,10 @@ func swap_dots(col1, row1, col2, row2) -> bool:
 
 		yield(tween1, "finished")
 		yield(tween2, "finished")
+		if first_dot.is_ingredient:
+			_register_ready_column(int(end_grid_pos.x))
+		if other_dot.is_ingredient:
+			_register_ready_column(int(start_grid_pos.x))
 
 		if !move_checked:
 			find_matches()
@@ -863,6 +889,46 @@ func swap_back():
 func _process(_delta):
 	if is_dragging and dragged_dot != null:
 		dragged_dot.global_position = get_global_mouse_position()
+	else:
+		_maybe_autoplay()
+
+func _maybe_autoplay():
+	if not _is_autoplay_player():
+		return
+	if state != move or is_dragging or _player_drop_active or _auto_playing:
+		return
+	var swap = _find_autoplay_swap()
+	if swap == null:
+		return
+	_auto_playing = true
+	call_deferred("_execute_autoplay_swap", swap[0], swap[1])
+
+func _find_autoplay_swap():
+	for i in range(width):
+		for j in range(height):
+			if all_dots[i][j] == null:
+				continue
+			if i < width - 1 and all_dots[i+1][j] != null:
+				if can_move_create_match(i, j, Vector2.RIGHT) != null:
+					return [Vector2(i, j), Vector2(i + 1, j)]
+			if j < height - 1 and all_dots[i][j+1] != null:
+				if can_move_create_match(i, j, Vector2.DOWN) != null:
+					return [Vector2(i, j), Vector2(i, j + 1)]
+	return null
+
+func _execute_autoplay_swap(start_pos: Vector2, end_pos: Vector2):
+	var swap_result = swap_dots(int(start_pos.x), int(start_pos.y), int(end_pos.x), int(end_pos.y))
+	if typeof(swap_result) == TYPE_OBJECT and swap_result is GDScriptFunctionState:
+		yield(swap_result, "completed")
+	_auto_playing = false
+
+func _is_autoplay_player() -> bool:
+	if PlayerManager == null:
+		return false
+	if not PlayerManager.has_method("get_player_name"):
+		return false
+	var name = String(PlayerManager.get_player_name()).strip_edges().to_lower()
+	return name == "otto"
 
 
 func _maybe_trigger_arrest_event() -> void:
@@ -1017,11 +1083,6 @@ func find_matches():
 		for dot in matched_dots:
 			var grid_pos = pixel_to_grid(dot.position.x, dot.position.y)
 			print("  - Dot at ", grid_pos, " with color ", dot.color)
-		
-		# --- NEW: Decrement moves on valid match ---
-		moves_left -= 1
-		game_ui.update_moves(moves_left)
-		# -----------------------------------------
 		
 		process_match_animations(matched_dots)
 		destroy_timer.start()
@@ -1237,7 +1298,7 @@ func destroy_matches():
 				match_label.global_position = screen_pos
 	
 	move_checked = true
-	if glasses_triggered:
+	if SUNGLASSES_ENABLED and glasses_triggered:
 		_glasses_active = false
 		_glasses_target = null
 		_on_sunglasses_broken(glasses_center)
@@ -1250,11 +1311,13 @@ func destroy_matches():
 
 	# Your existing "Meaner's Mischief" logic (as event) is fine
 	if was_matched:
+		_player_drop_active = true
 		_match_events += 1
-		_matches_since_glasses += 1
-		if (_matches_since_glasses >= 25) and not _glasses_active:
-			_matches_since_glasses = 0
-			_spawn_glasses_on_random_dot()
+		if SUNGLASSES_ENABLED:
+			_matches_since_glasses += 1
+			if (_matches_since_glasses >= 25) and not _glasses_active:
+				_matches_since_glasses = 0
+				_spawn_glasses_on_random_dot()
 		# --- MODIFIED: Only trigger random arrest in SCORE mode ---
 		if (_match_events % 20) == 0 and not _arrest_active and current_goal_type == LevelManagerScript.GoalType.SCORE:
 			var present: Array = []
@@ -1292,6 +1355,8 @@ func _dots_match(a, b) -> bool:
 	return a.color == b.color
 
 func _spawn_glasses_on_random_dot() -> void:
+	if not SUNGLASSES_ENABLED:
+		return
 	var candidates: Array = []
 	for i in range(width):
 		for j in range(height):
@@ -1307,6 +1372,8 @@ func _spawn_glasses_on_random_dot() -> void:
 	_glasses_target = d0
 
 func _on_sunglasses_broken(center_pos: Vector2) -> void:
+	if not SUNGLASSES_ENABLED:
+		return
 	if AudioManager != null:
 		AudioManager.play_sound("clear_board")
 	if PlayerManager != null and PlayerManager.has_method("increment_broken_sunglasses"):
@@ -1462,17 +1529,42 @@ func _apply_specials_and_collect(groups: Array) -> Array:
 	var to_match: Array = []
 	for g in groups:
 		var pos: Array = g["positions"]
+		var wildcard_pos = null
+		if pos.size() >= 5:
+			var center_idx = int(pos.size() / 2)
+			wildcard_pos = pos[center_idx]
 		# Standard triple (or larger) – match all in this run
+		var run_len = pos.size()
+		if run_len == 4:
+			_mark_line_clear(pos, g["orientation"], to_match)
 		for p3 in pos:
+			if wildcard_pos != null and p3 == wildcard_pos:
+				var special_dot = all_dots[p3.x][p3.y]
+				if special_dot != null and not special_dot.is_wildcard:
+					special_dot.set_wildcard(true)
+				continue
 			var d3 = all_dots[p3.x][p3.y]
 			if d3 != null and not d3 in to_match:
-				# Wildcards get matched, but not destroyed
+				to_match.append(d3)
 				if d3.is_wildcard:
 					d3.play_surprised_for_a_second()
-				else:
-					to_match.append(d3)
 	return to_match
 	# ----------------------------------------------------
+
+func _mark_line_clear(run_positions: Array, orientation: String, to_match: Array) -> void:
+	var coord = run_positions[0]
+	if orientation == "h":
+		var row = int(coord.y)
+		for x in range(width):
+			var dot = all_dots[x][row]
+			if dot != null and not dot.is_ingredient and not dot.is_wildcard and not dot in to_match:
+				to_match.append(dot)
+	else:
+		var col = int(coord.x)
+		for y in range(height):
+			var dot = all_dots[col][y]
+			if dot != null and not dot.is_ingredient and not dot.is_wildcard and not dot in to_match:
+				to_match.append(dot)
 
 # --- REMOVED powerup VFX functions ---
 func _get_white_tex():
@@ -1534,6 +1626,8 @@ func collapse_columns():
 						d.move(grid_to_pixel(i, j))
 						all_dots[i][j] = d
 						all_dots[i][k] = null
+						if j == height - 1 and _player_drop_active and d.is_ingredient:
+							_register_ready_column(i)
 						break
 	refill_timer.start()
 
@@ -1607,10 +1701,11 @@ func after_refill():
 	# --- NEW: Check for collected ingredients ---
 	if current_goal_type == LevelManagerScript.GoalType.DOWN_TO_EARTH:
 		var bottom_row = height - 1
+		_refresh_ready_columns()
 		var collected_count = 0
 		for x in range(width):
 			var dot = all_dots[x][bottom_row]
-			if dot != null and dot.is_ingredient:
+			if dot != null and dot.is_ingredient and _ready_key_columns.has(x):
 				dot.play_match_animation(0.0) # Play its simple fade
 				dot.queue_free()
 				all_dots[x][bottom_row] = null # Remove from grid
@@ -1619,8 +1714,10 @@ func after_refill():
 				game_ui.update_goal_count(objective_goal_count)
 				AudioManager.play_sound("coin") # Use a collect sound
 				collected_count += 1
+				_clear_ready_column(x)
 		
 		if collected_count > 0:
+			_player_drop_active = false
 			var chest_state = _play_ingredient_chest(collected_count)
 			yield(chest_state, "completed")
 			collapse_timer.start() # Start another collapse/refill cycle
@@ -1657,10 +1754,6 @@ func find_matches_after_refill():
 	var groups = _compute_match_groups()
 	var matched_dots = _apply_specials_and_collect(groups)
 	if matched_dots.size() > 0:
-		# --- NEW: Decrement moves on cascade ---
-		moves_left -= 1
-		game_ui.update_moves(moves_left)
-		# -------------------------------------
 		process_match_animations(matched_dots)
 		destroy_timer.start()
 
@@ -1694,11 +1787,6 @@ func check_game_over_conditions(force_win_check = false):
 		game_over(true)
 		return true
 
-	# If no win, check for loss (out of moves)
-	if moves_left <= 0:
-		game_over(false) # Pass false for loss
-		return true
-	
 	return false # Game is not over
 
 func game_over(win):
@@ -2116,6 +2204,7 @@ func _on_level_up(new_level):
 	all_dots = make_2d_array()
 	_clear_too_cool_state()
 	_clear_anvil()
+	_ready_key_columns.clear()
 	
 	# --- NEW: Reload level data on level up ---
 	current_level_num = new_level
@@ -2123,9 +2212,6 @@ func _on_level_up(new_level):
 	if LevelManager != null:
 		level_data = LevelManager.get_level_data(current_level_num)
 	current_goal_type = level_data.get("goal_type", LevelManagerScript.GoalType.SCORE)
-	moves_left = level_data.get("moves", 30)
-	
-	game_ui.update_moves(moves_left)
 	game_ui.set_level_goal(level_data)
 	
 	if current_goal_type == LevelManagerScript.GoalType.SCORE:
