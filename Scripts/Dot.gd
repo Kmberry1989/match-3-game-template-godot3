@@ -8,6 +8,8 @@ const REFERENCE_DOT_PX = 512.0
 export var color = ""
 onready var sprite = get_node("Sprite")
 onready var AudioManager = get_node_or_null("/root/AudioManager")
+onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+const CosmeticsCatalog = preload("res://Scripts/CosmeticsCatalog.gd")
 var matched = false
 var scale_multiplier = 1.0
 var is_wildcard = false
@@ -44,6 +46,8 @@ var wildcard_glow: Sprite = null
 var wildcard_glow_tween = null
 var jailed_scale_mult: float = 1.0
 var wobble_tween = null
+
+const JAIL_OVERLAY_ENABLED := false
  
 
 # Whether an XP orb has already been spawned for this dot in the current match.
@@ -118,6 +122,7 @@ func _ready():
 	start_floating()
 	
 	start_pulsing()
+	_apply_current_dot_skin()
 	
 	var new_area = Area2D.new()
 	add_child(new_area)
@@ -148,6 +153,24 @@ func _ready():
 		if new_area.has_method("set_pickable"):
 			new_area.set_pickable(true)
 		new_area.add_child(collision_shape)
+
+func _apply_current_dot_skin() -> void:
+	if PlayerManager != null and PlayerManager.has_method("get_equipped_cosmetic"):
+		var skin = String(PlayerManager.get_equipped_cosmetic("dot_skin"))
+		apply_dot_skin(skin)
+
+func apply_dot_skin(skin_id: String) -> void:
+	if is_ingredient or is_boss:
+		return
+	if sprite == null:
+		return
+	var item = CosmeticsCatalog.get_item("dot_skin", skin_id)
+	var visual = item.get("visual", {})
+	var palette = visual.get("palette", {})
+	if palette.has(color):
+		sprite.modulate = palette[color]
+	else:
+		sprite.modulate = Color(1, 1, 1, 1)
 
 func _exit_tree():
 	_stop_all_tweens()
@@ -185,6 +208,8 @@ func make_ingredient():
 	is_arrested = true # Use this to block horizontal swaps
 	is_wildcard = false
 	color = "ingredient"
+	if sprite:
+		sprite.modulate = Color(1, 1, 1, 1)
 	
 	# Stop all avatar animations/timers
 	blink_timer.stop()
@@ -645,6 +670,8 @@ func _stop_wildcard_glow() -> void:
 
 func apply_jail_overlay(stage: int) -> void:
 	is_arrested = true
+	if not JAIL_OVERLAY_ENABLED:
+		return
 	if jail_overlay == null:
 		jail_overlay = Sprite.new()
 		jail_overlay.centered = true
@@ -663,6 +690,8 @@ func apply_jail_overlay(stage: int) -> void:
 	start_pulsing(true)
 
 func update_jail_overlay(stage: int) -> void:
+	if not JAIL_OVERLAY_ENABLED:
+		return
 	if jail_overlay == null:
 		return
 	var tex_path = "res://Assets/Visuals/avatar_injail" + str(stage) + ".png"
@@ -671,6 +700,11 @@ func update_jail_overlay(stage: int) -> void:
 		jail_overlay.texture = tex
 
 func show_jailbreak_then_clear() -> void:
+	if not JAIL_OVERLAY_ENABLED:
+		clear_jail_overlay()
+		reset_to_normal_state()
+		queue_free()
+		return
 	if jail_overlay == null:
 		return
 	var tex = load("res://Assets/Visuals/avatar_jailbreak.png")

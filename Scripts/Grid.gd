@@ -21,6 +21,7 @@ onready var AudioManager = get_node_or_null("/root/AudioManager")
 onready var WebsocketClient = get_node_or_null("/root/WebsocketClient")
 onready var MultiplayerManager = get_node_or_null("/root/MultiplayerManager")
 onready var LevelManager = get_node_or_null("/root/LevelManager")
+const CosmeticsCatalog = preload("res://Scripts/CosmeticsCatalog.gd")
 
 export var empty_spaces = PoolVector2Array()
 
@@ -124,6 +125,7 @@ var _glasses_active: bool = false
 var _glasses_target = null
 var _matches_since_glasses: int = 0
 const SUNGLASSES_ENABLED: bool = true
+const ARREST_ENABLED: bool = false
 var _too_cool_dot = null
 var _too_cool_active: bool = false
 # --- NEW: Autoplay for Otto ---
@@ -205,6 +207,7 @@ func _ready():
 	# -------------------------
 
 	spawn_dots()
+	_apply_dot_skin_to_all()
 	
 	# --- NEW: Setup Objectives AFTER spawning dots ---
 	setup_objectives()
@@ -224,6 +227,8 @@ func _ready():
 	yield(get_tree(), "idle_frame")
 	if PlayerManager != null:
 		PlayerManager.connect("level_up", self, "_on_level_up")
+		if PlayerManager.has_signal("cosmetic_equipped") and not PlayerManager.is_connected("cosmetic_equipped", self, "_on_cosmetic_equipped"):
+			PlayerManager.connect("cosmetic_equipped", self, "_on_cosmetic_equipped")
 	
 	_restart_idle_timers()
 	
@@ -238,6 +243,8 @@ func setup_objectives():
 	if current_goal_type == LevelManagerScript.GoalType.DOWN_TO_EARTH:
 		setup_down_to_earth()
 	elif current_goal_type == LevelManagerScript.GoalType.JAILBREAK:
+		if not ARREST_ENABLED:
+			return
 		# "Meaner's Mischief" from level data
 		if level_data.has("initial_jail_color"):
 			_trigger_arrest_event(level_data.get("initial_jail_color"))
@@ -646,6 +653,49 @@ func _apply_mobile_tuning() -> void:
 	if OS.has_feature("JavaScript"):
 		# Treat all HTML5 builds as mobile-friendly for performance tuning
 		_mobile_tuning_enabled = true
+
+func _apply_dot_skin_to_all() -> void:
+	if PlayerManager == null or not PlayerManager.has_method("get_equipped_cosmetic"):
+		return
+	var skin_id = String(PlayerManager.get_equipped_cosmetic("dot_skin"))
+	for i in range(width):
+		for j in range(height):
+			var dot = all_dots[i][j]
+			if dot != null and dot.has_method("apply_dot_skin"):
+				dot.apply_dot_skin(skin_id)
+
+func _apply_particle_pack(particles: Particles2D) -> void:
+	if particles == null:
+		return
+	if PlayerManager == null or not PlayerManager.has_method("get_equipped_cosmetic"):
+		return
+	var pack_id = String(PlayerManager.get_equipped_cosmetic("particle_pack"))
+	var item = CosmeticsCatalog.get_item("particle_pack", pack_id)
+	var visual = item.get("visual", {})
+	var mult = float(visual.get("amount_multiplier", 1.0))
+	if mult > 0:
+		particles.amount = int(max(4, round(particles.amount * mult)))
+	var mat = particles.process_material
+	if mat != null:
+		if mat.has_method("set"):
+			mat.set("spread", float(visual.get("spread", mat.get("spread"))))
+			mat.set("initial_velocity", float(visual.get("initial_velocity", mat.get("initial_velocity"))))
+			mat.set("scale", float(visual.get("scale", mat.get("scale"))))
+
+func _apply_combo_style(label: Label) -> void:
+	if label == null:
+		return
+	if PlayerManager == null or not PlayerManager.has_method("get_equipped_cosmetic"):
+		return
+	var style_id = String(PlayerManager.get_equipped_cosmetic("combo_style"))
+	var item = CosmeticsCatalog.get_item("combo_style", style_id)
+	var visual = item.get("visual", {})
+	var color = visual.get("color", Color(1.0, 0.8, 0.4, 1.0))
+	label.add_color_override("font_color", color)
+
+func _on_cosmetic_equipped(category: String, id: String) -> void:
+	if category == "dot_skin":
+		_apply_dot_skin_to_all()
 
 func update_score_display():
 	game_ui.update_xp_label()
@@ -1091,6 +1141,9 @@ func _is_autoplay_player() -> bool:
 func _maybe_trigger_arrest_event() -> void:
 	if _arrest_active:
 		return
+
+	if not ARREST_ENABLED:
+		return
 		
 	# --- MODIFIED: Only trigger jail in SCORE mode ---
 	if current_goal_type != LevelManagerScript.GoalType.SCORE:
@@ -1110,6 +1163,8 @@ func _maybe_trigger_arrest_event() -> void:
 		_trigger_arrest_event(String(present[0]))
 
 func _trigger_arrest_event(col: String) -> void:
+	if not ARREST_ENABLED:
+		return
 	_arrest_active = true
 	_arrested_color = col
 	_arrest_stage = 3
@@ -1137,6 +1192,8 @@ func _trigger_arrest_event(col: String) -> void:
 		_siren_played = true
 
 func _apply_arrest_overlay_if_needed(d) -> void:
+	if not ARREST_ENABLED:
+		return
 	if _arrest_active and d == _arrested_dot and d.has_method("apply_jail_overlay"):
 		d.play_sad_animation()
 		d.apply_jail_overlay(_arrest_stage)
@@ -1144,10 +1201,14 @@ func _apply_arrest_overlay_if_needed(d) -> void:
 		d.z_index = base - 1
 
 func _update_arrest_overlays() -> void:
+	if not ARREST_ENABLED:
+		return
 	if _arrested_dot != null and _arrested_dot.has_method("update_jail_overlay"):
 		_arrested_dot.update_jail_overlay(_arrest_stage)
 
 func _jailbreak_release() -> void:
+	if not ARREST_ENABLED:
+		return
 	if _arrested_dot != null and _arrested_dot.has_method("show_jailbreak_then_clear"):
 		_arrested_dot.show_jailbreak_then_clear()
 		_arrested_dot.matched = true
@@ -1505,6 +1566,8 @@ func destroy_matches():
 				# ------------------------
 
 				var particles = match_particles.instance()
+				if particles is Particles2D:
+					_apply_particle_pack(particles)
 				if _mobile_tuning_enabled and particles is Particles2D:
 					particles.amount = max(6, int(particles.amount * 0.5))
 				particles.position = dot.position
@@ -1571,6 +1634,8 @@ func destroy_matches():
 			if combo_display >= 2:
 				var combo_label = match_label_scene.instance()
 				combo_label.text = "Combo x" + str(combo_display)
+				if combo_label is Label:
+					_apply_combo_style(combo_label)
 				get_parent().get_node("CanvasLayer").add_child(combo_label)
 				var combo_pos = to_global(match_center - Vector2(0, 44))
 				if combo_label is Control:
@@ -2726,6 +2791,10 @@ func _slime_random_dots():
 		
 		if dot != null:
 			var particles = match_particles.instance()
+			if particles is Particles2D:
+				_apply_particle_pack(particles)
+				if _mobile_tuning_enabled:
+					particles.amount = max(6, int(particles.amount * 0.5))
 			particles.position = dot.position
 			particles.modulate = Color.green # Slime color
 			add_child(particles)

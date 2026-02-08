@@ -10,6 +10,8 @@ signal coins_changed(new_amount)
 signal avatar_changed
 signal meaner_meter_changed(current, max_value)
 signal meaner_meter_filled()
+signal cosmetic_unlocked(category, id)
+signal cosmetic_equipped(category, id)
 
 var player_uid = ""
 var last_user_info: Dictionary = {}
@@ -30,11 +32,28 @@ var player_data = {
 		"frames": ["default", "frame_2"],
 		"aliases": []
 	},
+	"cosmetics": {
+		"equipped": {
+			"dot_skin": "classic",
+			"board_theme": "classic",
+			"particle_pack": "classic",
+			"combo_style": "classic"
+		},
+		"unlocks": {
+			"dot_skin": ["classic"],
+			"board_theme": ["classic"],
+			"particle_pack": ["classic"],
+			"combo_style": ["classic"]
+		}
+	},
 	"jailbreaks": {},
 	"objectives": {
 		"time_played_1hr": false
 	}
 }
+
+const CosmeticsCatalog = preload("res://Scripts/CosmeticsCatalog.gd")
+const CosmeticUnlocks = preload("res://Scripts/CosmeticUnlocks.gd")
 
 func _ready():
 	if firebase == null:
@@ -45,7 +64,11 @@ func _ready():
 			if typeof(local) == TYPE_DICTIONARY and local.size() > 0:
 				player_data = local
 				_normalize_frame_state()
+				_normalize_cosmetics_state()
+		_hook_achievement_cosmetics()
 		return
+	_normalize_cosmetics_state()
+	_hook_achievement_cosmetics()
 
 func load_player_data(user_info):
 	if firebase == null:
@@ -70,6 +93,7 @@ func load_player_data(user_info):
 			# Convert Firestore fields to a plain Dictionary
 			player_data = Utilities.fields2dict({"fields": doc.document})
 			_normalize_frame_state()
+			_normalize_cosmetics_state()
 		else:
 			print("New player. Creating default data.")
 			var display = ""
@@ -80,6 +104,7 @@ func load_player_data(user_info):
 			player_data["player_name"] = display
 			yield(coll.add(player_uid, player_data), "completed")
 			_normalize_frame_state()
+			_normalize_cosmetics_state()
 	else:
 		print("No UID found in user_info")
 
@@ -275,6 +300,97 @@ func _normalize_frame_state() -> void:
 	if SaveManager != null:
 		SaveManager.save_player(player_data)
 
+func _normalize_cosmetics_state() -> void:
+	if not player_data.has("cosmetics"):
+		player_data["cosmetics"] = {}
+	var cosmetics = player_data["cosmetics"]
+	if not cosmetics.has("equipped"):
+		cosmetics["equipped"] = CosmeticsCatalog.get_default_equipped()
+	if not cosmetics.has("unlocks"):
+		cosmetics["unlocks"] = CosmeticsCatalog.get_default_unlocks()
+	# Ensure all categories exist
+	var defaults = CosmeticsCatalog.get_default_equipped()
+	var unlock_defaults = CosmeticsCatalog.get_default_unlocks()
+	for cat in defaults.keys():
+		if not cosmetics["equipped"].has(cat):
+			cosmetics["equipped"][cat] = defaults[cat]
+		if not cosmetics["unlocks"].has(cat):
+			cosmetics["unlocks"][cat] = unlock_defaults[cat].duplicate()
+		# Ensure classic always unlocked
+		if not cosmetics["unlocks"][cat].has("classic"):
+			cosmetics["unlocks"][cat].append("classic")
+		# Ensure equipped is unlocked
+		if not cosmetics["unlocks"][cat].has(cosmetics["equipped"][cat]):
+			cosmetics["equipped"][cat] = "classic"
+	player_data["cosmetics"] = cosmetics
+	if SaveManager != null:
+		SaveManager.save_player(player_data)
+
+func _hook_achievement_cosmetics() -> void:
+	var am = get_node_or_null("/root/AchievementManager")
+	if am != null and not am.is_connected("achievement_unlocked", self, "_on_achievement_unlocked"):
+		am.connect("achievement_unlocked", self, "_on_achievement_unlocked")
+	# Unlock any cosmetics tied to already-earned achievements
+	_sync_achievement_cosmetics()
+
+func _sync_achievement_cosmetics() -> void:
+	var am = get_node_or_null("/root/AchievementManager")
+	var unlocks = CosmeticUnlocks.get_unlocks()
+	for ach_id in unlocks.keys():
+		var already = false
+		if am != null and am.has_method("is_unlocked"):
+			already = am.is_unlocked(ach_id)
+		else:
+			var trophies: Array = player_data.get("unlocks", {}).get("trophies", [])
+			already = trophies.has(ach_id)
+		if already:
+			for entry in unlocks[ach_id]:
+				unlock_cosmetic(entry["category"], entry["id"])
+
+func _on_achievement_unlocked(achievement_id: String) -> void:
+	var unlocks = CosmeticUnlocks.get_unlocks()
+	if not unlocks.has(achievement_id):
+		return
+	for entry in unlocks[achievement_id]:
+		unlock_cosmetic(entry["category"], entry["id"])
+
+func get_equipped_cosmetic(category: String) -> String:
+	if not player_data.has("cosmetics"):
+		_normalize_cosmetics_state()
+	var cosmetics = player_data["cosmetics"]
+	return String(cosmetics.get("equipped", {}).get(category, "classic"))
+
+func is_cosmetic_unlocked(category: String, id: String) -> bool:
+	if not player_data.has("cosmetics"):
+		_normalize_cosmetics_state()
+	var cosmetics = player_data["cosmetics"]
+	var arr: Array = cosmetics.get("unlocks", {}).get(category, [])
+	return arr.has(id)
+
+func unlock_cosmetic(category: String, id: String) -> void:
+	if not player_data.has("cosmetics"):
+		_normalize_cosmetics_state()
+	var cosmetics = player_data["cosmetics"]
+	if not cosmetics["unlocks"].has(category):
+		cosmetics["unlocks"][category] = []
+	if not cosmetics["unlocks"][category].has(id):
+		cosmetics["unlocks"][category].append(id)
+		emit_signal("cosmetic_unlocked", category, id)
+	player_data["cosmetics"] = cosmetics
+	save_player_data()
+
+func equip_cosmetic(category: String, id: String) -> void:
+	if not is_cosmetic_unlocked(category, id):
+		return
+	var cosmetics = player_data["cosmetics"]
+	var current = String(cosmetics.get("equipped", {}).get(category, "classic"))
+	if current == id:
+		return
+	cosmetics["equipped"][category] = id
+	player_data["cosmetics"] = cosmetics
+	save_player_data()
+	emit_signal("cosmetic_equipped", category, id)
+
 func set_current_frame(frame_name):
 	player_data["current_frame"] = _normalize_frame_name(String(frame_name))
 	emit_signal("frame_changed", player_data["current_frame"])
@@ -412,6 +528,10 @@ func reset_progress():
 			"trophies": [],
 			"frames": ["default", "frame_2"],
 			"aliases": []
+		},
+		"cosmetics": {
+			"equipped": CosmeticsCatalog.get_default_equipped(),
+			"unlocks": CosmeticsCatalog.get_default_unlocks()
 		},
 		"jailbreaks": {},
 		"objectives": {

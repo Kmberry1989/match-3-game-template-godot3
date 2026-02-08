@@ -16,12 +16,15 @@ onready var change_avatar_button = $MarginContainer/VBoxContainer/HBoxContainer/
 onready var back_button = $MarginContainer/VBoxContainer/BackButton
 
 onready var PlayerManager = get_node_or_null("/root/PlayerManager")
+const CosmeticsCatalog = preload("res://Scripts/CosmeticsCatalog.gd")
 
 # Gallery state for built-in avatars
 var _avatar_paths: Array = []
 var _avatar_index: int = 0
 var _avatar_label: Label = null
 var _frame_overlay: TextureRect = null
+var _cosmetics_label: Label = null
+var _cosmetics_container: VBoxContainer = null
 
 func _ready():
 	# Build cyclable gallery of avatar options from Assets/Dots/*avatar.png first
@@ -34,6 +37,8 @@ func _ready():
 	var AchMgr = get_node_or_null("/root/AchievementManager")
 	if AchMgr != null and not AchMgr.is_connected("achievement_unlocked", self, "_on_achievement_unlocked"):
 		AchMgr.connect("achievement_unlocked", self, "_on_achievement_unlocked")
+	if PlayerManager != null and PlayerManager.has_signal("cosmetic_equipped") and not PlayerManager.is_connected("cosmetic_equipped", self, "_on_cosmetic_equipped"):
+		PlayerManager.connect("cosmetic_equipped", self, "_on_cosmetic_equipped")
 	# Rebuild UI: add Prev/Next and a label below
 	var right_box = change_avatar_button.get_parent()
 	var insert_at = 0
@@ -90,6 +95,7 @@ func display_player_data():
 			frame_selection_button.disabled = true
 		# Set default frame visual on overlay (draw above avatar)
 		_set_profile_frame_texture("res://Assets/Visuals/Avatar Frames/avatar_frame_2.png")
+		_refresh_cosmetics_section()
 		return
 
 	# Normal path with PlayerManager available
@@ -199,6 +205,7 @@ func display_player_data():
 			current_frame_index = i
 	frame_selection_button.select(current_frame_index)
 	update_avatar_frame()
+	_refresh_cosmetics_section()
 
 func update_avatar_frame():
 	var frame_path = "res://Assets/Visuals/Avatar Frames/avatar_frame_2.png" # Default matches in-game
@@ -241,6 +248,92 @@ func _set_profile_frame_texture(path: String) -> void:
 		return
 	if ResourceLoader.exists(path):
 		_frame_overlay.texture = load(path)
+
+func _ensure_cosmetics_section() -> void:
+	var vbox = get_node_or_null("MarginContainer/VBoxContainer")
+	if vbox == null:
+		return
+	if _cosmetics_label == null or not is_instance_valid(_cosmetics_label):
+		var existing_label = vbox.get_node_or_null("CosmeticsLabel")
+		if existing_label != null and existing_label is Label:
+			_cosmetics_label = existing_label
+		else:
+			var lbl = Label.new()
+			lbl.name = "CosmeticsLabel"
+			lbl.text = "Cosmetics:"
+			lbl.align = Label.ALIGN_LEFT
+			vbox.add_child(lbl)
+			_cosmetics_label = lbl
+	if _cosmetics_container == null or not is_instance_valid(_cosmetics_container):
+		var existing_container = vbox.get_node_or_null("CosmeticsContainer")
+		if existing_container != null and existing_container is VBoxContainer:
+			_cosmetics_container = existing_container
+		else:
+			var container = VBoxContainer.new()
+			container.name = "CosmeticsContainer"
+			container.add_constant_override("separation", 6)
+			vbox.add_child(container)
+			_cosmetics_container = container
+	# Insert cosmetics section before the avatar HBox if present
+	var hbox = vbox.get_node_or_null("HBoxContainer")
+	if hbox != null:
+		var idx = vbox.get_children().find(hbox)
+		if idx != -1:
+			vbox.move_child(_cosmetics_label, idx)
+			vbox.move_child(_cosmetics_container, idx + 1)
+
+func _refresh_cosmetics_section() -> void:
+	_ensure_cosmetics_section()
+	if _cosmetics_container == null:
+		return
+	for child in _cosmetics_container.get_children():
+		child.queue_free()
+	var pm = PlayerManager
+	for category in CosmeticsCatalog.get_categories():
+		var row = HBoxContainer.new()
+		row.add_constant_override("separation", 8)
+		row.alignment = BoxContainer.ALIGN_BEGIN
+		var cat_label = Label.new()
+		cat_label.text = _title_case(category.replace("_", " "))
+		cat_label.rect_min_size = Vector2(110, 0)
+		row.add_child(cat_label)
+		var item_id = "classic"
+		if pm != null and pm.has_method("get_equipped_cosmetic"):
+			item_id = String(pm.get_equipped_cosmetic(category))
+		var item = CosmeticsCatalog.get_item(category, item_id)
+		var name_label = Label.new()
+		name_label.text = String(item.get("name", item_id))
+		row.add_child(name_label)
+		var preview = _build_cosmetic_preview(category, item)
+		row.add_child(preview)
+		_cosmetics_container.add_child(row)
+
+func _build_cosmetic_preview(category: String, item: Dictionary) -> Control:
+	var wrap = HBoxContainer.new()
+	wrap.add_constant_override("separation", 4)
+	if category == "dot_skin":
+		var palette = item.get("visual", {}).get("palette", {})
+		for c in ["red", "green", "blue"]:
+			var sw = ColorRect.new()
+			sw.rect_min_size = Vector2(14, 14)
+			sw.color = palette.get(c, Color(1, 1, 1, 1))
+			wrap.add_child(sw)
+	elif category == "board_theme":
+		var tint = item.get("visual", {}).get("modulate", Color(1, 1, 1, 1))
+		var sw2 = ColorRect.new()
+		sw2.rect_min_size = Vector2(22, 14)
+		sw2.color = tint
+		wrap.add_child(sw2)
+	elif category == "combo_style":
+		var lbl = Label.new()
+		lbl.text = "Combo"
+		lbl.add_color_override("font_color", item.get("visual", {}).get("color", Color(1, 1, 1, 1)))
+		wrap.add_child(lbl)
+	else:
+		var lbl2 = Label.new()
+		lbl2.text = "FX"
+		wrap.add_child(lbl2)
+	return wrap
 
 func _on_frame_selected(index):
 	var frame_name = frame_selection_button.get_item_text(index).to_lower().replace(" ", "_")
@@ -405,6 +498,9 @@ func _on_trophy_thumb_gui_input(event, t: Dictionary, is_unlocked: bool) -> void
 func _on_achievement_unlocked(_id: String) -> void:
 	# When a trophy unlocks mid-session, refresh the gallery
 	display_player_data()
+
+func _on_cosmetic_equipped(_category: String, _id: String) -> void:
+	_refresh_cosmetics_section()
 
 func _on_file_selected(path):
 	# Validate selection: only allow res://Assets/Dots/*avatar.png

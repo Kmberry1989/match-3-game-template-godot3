@@ -6,6 +6,7 @@ onready var viewer_overlay = $ViewerOverlay
 onready var viewer_image = $ViewerOverlay/Center/VBox/LargeImage
 onready var viewer_label = $ViewerOverlay/Center/VBox/ItemLabel
 var viewer_desc: Label = null
+const CosmeticsCatalog = preload("res://Scripts/CosmeticsCatalog.gd")
 
 var achievements: Array = [] # [{id, path, unlocked_icon, locked_icon, name, unlocked, description}]
 var current_index: int = -1
@@ -22,11 +23,15 @@ func _ready():
 		am.connect("achievement_unlocked", self, "_on_achievement_unlocked")
 	# Make tabs and back button larger for easier tapping
 	tab_container.rect_scale = Vector2(1.4, 1.4)
-	# Hide/disable any Frames tab if present in the scene
+	# Build cosmetics tab using the existing Frames tab slot
 	var frames_tab = tab_container.get_node_or_null("Frames")
 	if frames_tab:
-		frames_tab.visible = false
-		frames_tab.queue_free()
+		frames_tab.visible = true
+		frames_tab.name = "Cosmetics"
+		_build_cosmetics_tab(frames_tab)
+		var pm = get_node_or_null("/root/PlayerManager")
+		if pm != null and pm.has_signal("cosmetic_equipped") and not pm.is_connected("cosmetic_equipped", self, "_on_cosmetic_equipped"):
+			pm.connect("cosmetic_equipped", self, "_on_cosmetic_equipped")
 	# Make back button behavior/layout match Shop
 	var root_vbox = tab_container.get_parent() as VBoxContainer
 	if root_vbox != null:
@@ -58,6 +63,92 @@ func _ready():
 				# Optional: wrap long descriptions
 				viewer_desc.autowrap = true
 				vb.add_child(viewer_desc)
+
+func _on_cosmetic_equipped(_category, _id) -> void:
+	var frames_tab = tab_container.get_node_or_null("Cosmetics")
+	if frames_tab:
+		_build_cosmetics_tab(frames_tab)
+
+func _build_cosmetics_tab(tab: Control) -> void:
+	if tab == null:
+		return
+	var scroll = tab.get_node_or_null("Scroll")
+	if scroll == null:
+		scroll = ScrollContainer.new()
+		scroll.name = "Scroll"
+		scroll.anchor_right = 1.0
+		scroll.anchor_bottom = 1.0
+		scroll.size_flags_vertical = 3
+		tab.add_child(scroll)
+	for c in scroll.get_children():
+		c.queue_free()
+	var vb = VBoxContainer.new()
+	vb.name = "CosmeticsVBox"
+	vb.add_constant_override("separation", 12)
+	scroll.add_child(vb)
+
+	var pm = get_node_or_null("/root/PlayerManager")
+	for category in CosmeticsCatalog.get_categories():
+		var title = Label.new()
+		title.text = _title_case(category.replace("_", " "))
+		title.align = Label.ALIGN_CENTER
+		vb.add_child(title)
+
+		var row = HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGN_CENTER
+		row.add_constant_override("separation", 10)
+		vb.add_child(row)
+
+		var equipped_id = "classic"
+		if pm != null and pm.has_method("get_equipped_cosmetic"):
+			equipped_id = String(pm.get_equipped_cosmetic(category))
+		var item = CosmeticsCatalog.get_item(category, equipped_id)
+		var card = _make_cosmetic_preview_card(category, item)
+		row.add_child(card)
+
+func _make_cosmetic_preview_card(category: String, item: Dictionary) -> Control:
+	var panel = PanelContainer.new()
+	panel.rect_min_size = Vector2(260, 180)
+	var vb = VBoxContainer.new()
+	vb.alignment = BoxContainer.ALIGN_CENTER
+	vb.add_constant_override("separation", 6)
+	panel.add_child(vb)
+
+	var preview = ColorRect.new()
+	preview.rect_min_size = Vector2(120, 80)
+	preview.color = Color(0.1, 0.1, 0.1, 0.4)
+	vb.add_child(preview)
+
+	if category == "dot_skin":
+		var palette = item.get("visual", {}).get("palette", {})
+		var row = HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGN_CENTER
+		row.add_constant_override("separation", 6)
+		vb.add_child(row)
+		for c in ["red", "green", "blue"]:
+			var sw = ColorRect.new()
+			sw.rect_min_size = Vector2(32, 32)
+			sw.color = palette.get(c, Color(1, 1, 1, 1))
+			row.add_child(sw)
+	elif category == "board_theme":
+		preview.color = item.get("visual", {}).get("modulate", Color(1, 1, 1, 1))
+	elif category == "combo_style":
+		var lbl = Label.new()
+		lbl.text = "Combo x3"
+		lbl.align = Label.ALIGN_CENTER
+		lbl.add_color_override("font_color", item.get("visual", {}).get("color", Color(1, 1, 1, 1)))
+		vb.add_child(lbl)
+	else:
+		var lbl2 = Label.new()
+		lbl2.text = "Equipped"
+		lbl2.align = Label.ALIGN_CENTER
+		vb.add_child(lbl2)
+
+	var name_label = Label.new()
+	name_label.text = String(item.get("name", "Classic"))
+	name_label.align = Label.ALIGN_CENTER
+	vb.add_child(name_label)
+	return panel
 
 func load_achievements():
 	# Populate from AchievementManager if present; otherwise scan filesystem and show locked images

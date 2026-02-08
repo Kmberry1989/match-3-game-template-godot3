@@ -30,9 +30,9 @@ const LEVELS = {
 		"ingredient_positions": [ [1, 0], [3, 0], [5, 0] ], # Spawn 3 ingredients at top
 	},
 	3: {
-		"goal_type": GoalType.JAILBREAK,
-		"goal_text": "Break out of Jail!",
-		"initial_jail_color": "red" # Trigger Meaner's Mischief for 'red' at start
+		"goal_type": GoalType.SCORE,
+		"goal_text": "Reach 1,500 Points!",
+		"target_score": 1500
 	},
 	4: {
 		"disabled": true,
