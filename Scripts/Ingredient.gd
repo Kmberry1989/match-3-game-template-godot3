@@ -3,18 +3,11 @@
 extends "res://Scripts/Dot.gd"
 
 func _ready():
-	# This node IS an ingredient
 	is_ingredient = true
-	
-	# This node cannot be swapped horizontally
-	# We use is_arrested to block horizontal swaps in the Grid
-	is_arrested = true 
-	
-	# This node cannot be part of a match
+	is_arrested = false
 	color = "ingredient"
 	is_wildcard = false
-	
-	# Stop all avatar animations
+
 	var blink_timer = get_node_or_null("BlinkTimer")
 	if blink_timer: blink_timer.stop()
 	var anim_timer = get_node_or_null("AnimationTimer")

@@ -136,7 +136,6 @@ func add_xp(amount):
 		if coins_awarded > 0:
 			player_data["coins"] += coins_awarded
 			emit_signal("coins_changed", player_data["coins"])
-			_show_xp_conversion_animation()
 	# Achievements for reaching certain levels (safe wrappers)
 	if player_data["current_level"] >= 2:
 		achievement_unlock("first_chapter")
@@ -307,7 +306,9 @@ func complete_level(level_num, score_achieved, stars_earned):
 	# The add_xp function handles level-ups from XP, but this is for direct level progression.
 	if level_num >= player_data["current_level"]:
 		player_data["current_level"] = level_num + 1
-		emit_signal("level_up", player_data["current_level"])
+	
+	# Always emit level_up to trigger transition in Grid.gd
+	emit_signal("level_up", level_num + 1)
 	
 	# You could also award coins or other bonuses for winning here.
 	var coins_for_win = 10 # Example
@@ -393,3 +394,32 @@ func increment_jailbreak_for_color(color: String) -> void:
 	jb[color] = int(jb.get(color, 0)) + 1
 	player_data["jailbreaks"] = jb
 	save_player_data()
+
+func reset_progress():
+	player_data = {
+		"player_name": player_data.get("player_name", "Player"), # Keep name
+		"time_played": 0,
+		"current_level": 1,
+		"current_xp": 0,
+		"coins": 0,
+		"best_combo": 0,
+		"total_lines_cleared": 0,
+		"bonus_spins": 0,
+		"broken_sunglasses": 0,
+		"current_frame": "default",
+		"meaner_meter": {"current": 0, "max": 100},
+		"unlocks": {
+			"trophies": [],
+			"frames": ["default", "frame_2"],
+			"aliases": []
+		},
+		"jailbreaks": {},
+		"objectives": {
+			"time_played_1hr": false
+		}
+	}
+	save_player_data()
+	emit_signal("coins_changed", 0)
+	# emit_signal("level_up", 1) # Removed to prevent Grid animations during reset/scene change
+	emit_signal("meaner_meter_changed", 0, 100)
+	print("Player progress has been reset.")

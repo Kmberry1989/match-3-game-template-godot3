@@ -12,6 +12,7 @@ export var grid_scale: float = 1.0
 export var grid_nudge: Vector2 = Vector2.ZERO # pixel offset applied after centering
 export var y_offset: int
 export var AUTO_RESHUFFLE: bool = true
+export var drag_threshold_px: float = 10.0
 
 var x_start: float
 var y_start: float
@@ -91,6 +92,11 @@ var is_dragging: bool = false
 var dragged_dot: Node2D = null
 var drag_start_position: Vector2 = Vector2.ZERO
 var drag_start_grid: Vector2 = Vector2(-1, -1)
+var _active_touch_id: int = -1
+var _touch_start_screen_pos: Vector2 = Vector2.ZERO
+var _touch_dragging: bool = false
+var _last_pointer_global_pos: Vector2 = Vector2.ZERO
+var _last_pointer_screen_pos: Vector2 = Vector2.ZERO
 
 # Score variables
 var score: int = 0
@@ -126,6 +132,10 @@ var _ingredient_reward_playing: bool = false
 var _player_drop_active: bool = false
 var _auto_playing: bool = false
 var _auto_play_enabled: bool = false
+# Mobile performance toggle
+var _mobile_tuning_enabled: bool = false
+# Stuck-state watchdog for rare match-resolution stalls
+var _stall_check_elapsed: float = 0.0
 # --- Ingredient chest tracking ---
 var _ready_key_columns: Array = []
 # ------------------------------
@@ -139,6 +149,8 @@ var boss_tiles = [] # Will hold the positions of the boss tiles
 var _anvil_spawn_timer: Timer = Timer.new()
 var _anvil_node = null
 var _anvil_active: bool = false
+var moves_since_boss_attack: int = 0
+var _boss_falling: bool = false
 # ------------------------
 
 func _ready():
@@ -147,6 +159,7 @@ func _ready():
 	_clear_too_cool_state()
 	_clear_anvil()
 	randomize()
+	_apply_mobile_tuning()
 	# Apply grid-only scale by adjusting the cell size (offset).
 	if grid_scale != 1.0:
 		offset = int(round(offset * clamp(grid_scale, 0.5, 2.0)))
@@ -242,6 +255,31 @@ func _level_position_to_grid(pos_array):
 	return Vector2(column, row)
 
 func setup_down_to_earth():
+	# --- NEW: Spawn Chest ---
+	var layer = get_parent().get_node_or_null("CanvasLayer")
+	if layer != null and chest_closed_texture != null:
+		var chest_node = Node2D.new()
+		chest_node.name = "ChestNode" # Tag it for easy finding
+		var chest_sprite = Sprite.new()
+		chest_sprite.texture = chest_closed_texture
+		chest_sprite.centered = true
+		chest_node.add_child(chest_sprite)
+		
+		# Position at bottom middle column
+		var mid_col = int(width / 2)
+		var bottom_row = height - 1
+		var pos = grid_to_pixel(mid_col, bottom_row)
+		# Adjust for UI layer or keep in grid? 
+		# If we put it in CanvasLayer, we need screen coords.
+		# If we put it in Grid, it moves with grid.
+		# Let's put it in Grid for simpler alignment, but z-index high.
+		add_child(chest_node)
+		chest_node.position = pos
+		chest_node.z_index = -1 # Behind dots
+		
+		# Store reference if needed, or just find by name
+	# ------------------------
+
 	var ingredient_positions = level_data.get("ingredient_positions", [])
 	for pos_array in ingredient_positions:
 		var vec_pos = _level_position_to_grid(pos_array)
@@ -470,6 +508,40 @@ func _on_anvil_impact():
 	_anvil_active = false
 	_schedule_anvil_spawn()
 
+func _apply_boss_gravity_if_needed() -> void:
+	if _boss_falling or state != move:
+		return
+	if current_goal_type != LevelManagerScript.GoalType.EXTERMINATE:
+		return
+	if boss == null or not is_instance_valid(boss) or boss.is_defeated:
+		return
+	var boss_col = int(boss.grid_pos.x)
+	var boss_row = int(boss.grid_pos.y)
+	var can_fall = true
+	if boss_row + 2 >= height:
+		can_fall = false
+	else:
+		if all_dots[boss_col][boss_row + 2] != null or all_dots[boss_col + 1][boss_row + 2] != null:
+			can_fall = false
+	if not can_fall:
+		return
+	_boss_falling = true
+	state = wait
+	boss.grid_pos.y += 1
+	var center_pos = Vector2(boss.grid_pos.x + 0.5, boss.grid_pos.y + 0.5)
+	var tw = create_tween()
+	tw.tween_property(boss, "position", grid_to_pixel(center_pos.x, center_pos.y), 0.4).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+	# Update boss tiles list
+	boss_tiles.clear()
+	for i in range(boss.grid_pos.x, boss.grid_pos.x + 2):
+		for j in range(boss.grid_pos.y, boss.grid_pos.y + 2):
+			boss_tiles.append(Vector2(i, j))
+	yield(tw, "finished")
+	_boss_falling = false
+	state = move
+	_verify_render_logic()
+	_resync_idle_pulses()
+
 func _spawn_too_cool_dot():
 	var candidates: Array = []
 	for x in range(width):
@@ -533,9 +605,20 @@ func _resync_idle_pulses():
 				dot.start_pulsing(true)
 
 func _synchronize_after_move():
+	# --- NEW: Boss Attack Logic ---
+	if current_goal_type == LevelManagerScript.GoalType.EXTERMINATE and boss != null and is_instance_valid(boss) and not boss.is_defeated:
+		moves_since_boss_attack += 1
+		if moves_since_boss_attack >= 5:
+			moves_since_boss_attack = 0
+			boss.play_attack_animation()
+			_slime_random_dots()
+	# ------------------------------
+	
 	_verify_render_logic()
 	_resync_idle_pulses()
 	_player_drop_active = false
+	if current_goal_type == LevelManagerScript.GoalType.EXTERMINATE:
+		call_deferred("_apply_boss_gravity_if_needed")
 
 func _on_boss_defeated():
 	_clear_anvil()
@@ -557,6 +640,12 @@ func _recalc_start():
 
 func _on_viewport_size_changed():
 	_recalc_start()
+
+func _apply_mobile_tuning() -> void:
+	_mobile_tuning_enabled = false
+	if OS.has_feature("JavaScript"):
+		# Treat all HTML5 builds as mobile-friendly for performance tuning
+		_mobile_tuning_enabled = true
 
 func update_score_display():
 	game_ui.update_xp_label()
@@ -694,10 +783,21 @@ func is_in_grid(grid_position):
 
 # -------------------------------------
 
-func _get_closest_dot_to_cursor():
-	var mouse_pos = get_global_mouse_position()
+func _screen_to_global(screen_pos: Vector2) -> Vector2:
+	var canvas = get_viewport().get_canvas_transform()
+	return canvas.affine_inverse().xform(screen_pos)
+
+func _screen_to_local(screen_pos: Vector2) -> Vector2:
+	return to_local(_screen_to_global(screen_pos))
+
+func _get_pointer_global_pos() -> Vector2:
+	if _active_touch_id != -1:
+		return _last_pointer_global_pos
+	return get_global_mouse_position()
+
+func _get_closest_dot_to_point(global_pos: Vector2):
 	var space_state = get_world_2d().direct_space_state
-	var results = space_state.intersect_point(mouse_pos, 32, [], 2147483647, true, true)
+	var results = space_state.intersect_point(global_pos, 32, [], 2147483647, true, true)
 	
 	var closest_dot = null
 	var min_dist_sq = 10000000
@@ -706,81 +806,103 @@ func _get_closest_dot_to_cursor():
 		if result.collider is Area2D:
 			var dot = result.collider.get_parent()
 			if dot != null and dot.is_in_group("dots"):
-				var dist_sq = mouse_pos.distance_squared_to(dot.global_position)
+				var dist_sq = global_pos.distance_squared_to(dot.global_position)
 				if dist_sq < min_dist_sq:
 					min_dist_sq = dist_sq
 					closest_dot = dot
 	return closest_dot
 
+func _begin_drag(dot: Node2D, screen_pos: Vector2, is_mouse: bool) -> bool:
+	if dot == null:
+		return false
+	if state != move or dot.is_arrested:
+		return false
+	_restart_idle_timers()
+	idle_hint_count = 0
+	dragged_dot = dot
+	dragged_dot.z_index = 100 # Bring to front
+	drag_start_position = dot.position
+	drag_start_grid = pixel_to_grid(dot.position.x, dot.position.y)
+	is_dragging = true
+	_touch_dragging = is_mouse
+	_touch_start_screen_pos = screen_pos
+	_last_pointer_screen_pos = screen_pos
+	_last_pointer_global_pos = _screen_to_global(screen_pos)
+	dragged_dot.play_drag_sad_animation()
+	return true
+
+func _end_drag(screen_pos: Vector2, count_move: bool) -> void:
+	if not is_dragging or dragged_dot == null:
+		return
+	var end_lp = _screen_to_local(screen_pos)
+	var end_grid_pos = pixel_to_grid(end_lp.x, end_lp.y)
+	var start_grid_pos = pixel_to_grid(drag_start_position.x, drag_start_position.y)
+	var performed_swap = false
+	if _touch_dragging and is_in_grid(start_grid_pos) and is_in_grid(end_grid_pos):
+		var difference = end_grid_pos - start_grid_pos
+		if abs(difference.x) + abs(difference.y) == 1:
+			_restart_idle_timers()
+			var dot1 = all_dots[start_grid_pos.x][start_grid_pos.y]
+			var dot2 = all_dots[end_grid_pos.x][end_grid_pos.y]
+			if dot1 != null and dot2 != null:
+				var swap_state = swap_dots(start_grid_pos.x, start_grid_pos.y, end_grid_pos.x, end_grid_pos.y)
+				var swap_result = swap_state
+				if typeof(swap_result) == TYPE_OBJECT and swap_result is GDScriptFunctionState:
+					swap_result = yield(swap_result, "completed")
+				if bool(swap_result):
+					performed_swap = true
+
+	# Cleanup drag state
+	is_dragging = false
+	if not performed_swap and is_in_grid(start_grid_pos) and is_instance_valid(dragged_dot):
+		var move_tween = dragged_dot.move(grid_to_pixel(start_grid_pos.x, start_grid_pos.y))
+		yield(move_tween, "finished")
+	# Reset tug visuals and z-index
+	if is_instance_valid(dragged_dot):
+		dragged_dot.z_index = height - start_grid_pos.y
+		if dragged_dot.has_method("set_normal_texture"):
+			dragged_dot.set_normal_texture()
+	dragged_dot = null
+	_touch_dragging = false
+	_restart_idle_timers()
+
 func _input(event):
-	if state != move:
-		# If we are dragging, but state changes (e.g. match), cancel drag
-		if is_dragging and dragged_dot != null:
-			var start_grid_pos = drag_start_grid
-			if is_in_grid(start_grid_pos):
-				dragged_dot.move(grid_to_pixel(start_grid_pos.x, start_grid_pos.y))
-			# Reset tug visuals and z-index
-			var spr = dragged_dot.get_node_or_null("Sprite")
-			if spr != null:
-				spr.position = Vector2.ZERO
-			if dragged_dot.has_meta("base_z"):
-				dragged_dot.z_index = int(dragged_dot.get_meta("base_z"))
-			if dragged_dot != null and dragged_dot.has_method("set_normal_texture"):
-				dragged_dot.set_normal_texture()
-			is_dragging = false
-			dragged_dot = null
+	if event is InputEventScreenTouch:
+		if event.is_pressed():
+			if _active_touch_id != -1:
+				return
+			var global_pos = _screen_to_global(event.position)
+			var dot = _get_closest_dot_to_point(global_pos)
+			if _begin_drag(dot, event.position, false):
+				_active_touch_id = event.index
+		else:
+			if event.index != _active_touch_id:
+				return
+			var end_state = _end_drag(event.position, true)
+			if typeof(end_state) == TYPE_OBJECT and end_state is GDScriptFunctionState:
+				yield(end_state, "completed")
+			_active_touch_id = -1
+		return
+
+	if event is InputEventScreenDrag:
+		if event.index != _active_touch_id:
+			return
+		_last_pointer_screen_pos = event.position
+		_last_pointer_global_pos = _screen_to_global(event.position)
+		if not _touch_dragging and _touch_start_screen_pos.distance_to(event.position) >= drag_threshold_px:
+			_touch_dragging = true
 		return
 
 	if event is InputEventMouseButton and event.button_index == BUTTON_LEFT:
+		if _active_touch_id != -1:
+			return
 		if event.is_pressed():
-			var dot = _get_closest_dot_to_cursor()
-			if dot != null:
-				if state != move or dot.is_arrested:
-					return
-				
-				_restart_idle_timers()
-				idle_hint_count = 0
-				
-				dragged_dot = dot
-				dragged_dot.z_index = 100 # Bring to front
-				drag_start_position = dot.position
-				drag_start_grid = pixel_to_grid(dot.position.x, dot.position.y)
-				is_dragging = true
-				dragged_dot.play_drag_sad_animation()
+			var dot = _get_closest_dot_to_point(get_global_mouse_position())
+			_begin_drag(dot, event.position, true)
 		elif not event.is_pressed(): # Mouse Button Released
-			if is_dragging and dragged_dot != null:
-				var end_lp = to_local(get_global_mouse_position())
-				var end_grid_pos = pixel_to_grid(end_lp.x, end_lp.y)
-				
-				var start_grid_pos = pixel_to_grid(drag_start_position.x, drag_start_position.y)
-				
-				var performed_swap = false
-				if is_in_grid(start_grid_pos) and is_in_grid(end_grid_pos):
-					var difference = end_grid_pos - start_grid_pos
-					if abs(difference.x) + abs(difference.y) == 1:
-						_restart_idle_timers()
-						var dot1 = all_dots[start_grid_pos.x][start_grid_pos.y]
-						var dot2 = all_dots[end_grid_pos.x][end_grid_pos.y]
-						if dot1 != null and dot2 != null:
-							var swap_state = swap_dots(start_grid_pos.x, start_grid_pos.y, end_grid_pos.x, end_grid_pos.y)
-							var swap_result = swap_state
-							if typeof(swap_result) == TYPE_OBJECT and swap_result is GDScriptFunctionState:
-								swap_result = yield(swap_result, "completed")
-							if bool(swap_result):
-								performed_swap = true
-				
-				# Cleanup drag state
-				is_dragging = false
-				if not performed_swap and is_in_grid(start_grid_pos) and is_instance_valid(dragged_dot):
-						var move_tween = dragged_dot.move(grid_to_pixel(start_grid_pos.x, start_grid_pos.y))
-						yield(move_tween, "finished")
-				# Reset tug visuals and z-index
-				if is_instance_valid(dragged_dot):
-						dragged_dot.z_index = height - start_grid_pos.y
-						if dragged_dot.has_method("set_normal_texture"):
-								dragged_dot.set_normal_texture()
-				dragged_dot = null
-				_restart_idle_timers()
+			var end_state = _end_drag(event.position, true)
+			if typeof(end_state) == TYPE_OBJECT and end_state is GDScriptFunctionState:
+				yield(end_state, "completed")
 
 func swap_dots(col1, row1, col2, row2) -> bool:
 	if not is_instance_valid(all_dots[col1][row1]) or not is_instance_valid(all_dots[col2][row2]):
@@ -888,9 +1010,44 @@ func swap_back():
 	
 func _process(_delta):
 	if is_dragging and dragged_dot != null:
-		dragged_dot.global_position = get_global_mouse_position()
+		if _active_touch_id != -1 and not _touch_dragging:
+			dragged_dot.position = drag_start_position
+		else:
+			dragged_dot.global_position = _get_pointer_global_pos()
 	else:
 		_maybe_autoplay()
+	_stall_check_elapsed += _delta
+	if _stall_check_elapsed >= 0.5:
+		_stall_check_elapsed = 0.0
+		_recover_from_stall_if_needed()
+
+func _timers_idle() -> bool:
+	if destroy_timer != null and not destroy_timer.is_stopped():
+		return false
+	if collapse_timer != null and not collapse_timer.is_stopped():
+		return false
+	if refill_timer != null and not refill_timer.is_stopped():
+		return false
+	return true
+
+func _recover_from_stall_if_needed() -> void:
+	if state != wait:
+		return
+	if is_dragging or _auto_playing or _ingredient_reward_playing:
+		return
+	if not _timers_idle():
+		return
+	var groups = _compute_match_groups()
+	if groups.size() > 0:
+		var matched_dots = _apply_specials_and_collect(groups)
+		if matched_dots.size() > 0:
+			process_match_animations(matched_dots)
+			if destroy_timer != null:
+				destroy_timer.start()
+			return
+	state = move
+	move_checked = false
+	_synchronize_after_move()
 
 func _maybe_autoplay():
 	if not _is_autoplay_player():
@@ -1075,15 +1232,103 @@ func spawn_wildcard_safely() -> bool:
 			return true
 	return false
 	
+func _vec2_key(v: Vector2) -> String:
+	return str(int(v.x)) + "," + str(int(v.y))
+
 func find_matches():
 	var groups = _compute_match_groups()
-	var matched_dots = _apply_specials_and_collect(groups)
+	
+	# --- Powerup Detection ---
+	var powerup_creations: Array = [] # List of {pos: Vector2, type: String}
+	var creation_keys = {}
+	var pos_to_groups = {}
+	var groups_used = {}
+
+	for idx in range(groups.size()):
+		var group = groups[idx]
+		var positions = group["positions"]
+		var orientation = group.get("orientation", "")
+		for pos in positions:
+			var key = _vec2_key(pos)
+			if not pos_to_groups.has(key):
+				pos_to_groups[key] = {"h": [], "v": []}
+			if orientation == "h":
+				pos_to_groups[key]["h"].append(idx)
+			elif orientation == "v":
+				pos_to_groups[key]["v"].append(idx)
+
+	# Detect T/L intersections (create color bomb)
+	for key in pos_to_groups.keys():
+		var entry = pos_to_groups[key]
+		if entry["h"].size() == 0 or entry["v"].size() == 0:
+			continue
+		var h_idx = entry["h"][0]
+		var v_idx = entry["v"][0]
+		var combined = {}
+		for p in groups[h_idx]["positions"]:
+			combined[_vec2_key(p)] = p
+		for p in groups[v_idx]["positions"]:
+			combined[_vec2_key(p)] = p
+		if combined.size() < 5:
+			continue
+		var parts = key.split(",")
+		var inter_pos = Vector2(int(parts[0]), int(parts[1]))
+		var creation_pos = inter_pos
+		if combined.has(_vec2_key(last_direction)):
+			creation_pos = last_direction
+		elif combined.has(_vec2_key(last_place)):
+			creation_pos = last_place
+		var c_key = _vec2_key(creation_pos) + ":color"
+		if not creation_keys.has(c_key):
+			powerup_creations.append({"pos": creation_pos, "type": "color"})
+			creation_keys[c_key] = true
+		groups_used[h_idx] = true
+		groups_used[v_idx] = true
+
+	# Straight line 4/5+ powerups (skip groups consumed by T/L)
+	for idx in range(groups.size()):
+		if groups_used.has(idx):
+			continue
+		var group = groups[idx]
+		var positions = group["positions"]
+		var count = positions.size()
+		if count < 4:
+			continue
+		var creation_pos = positions[0]
+		for pos in positions:
+			if pos == last_direction or pos == last_place:
+				creation_pos = pos
+				break
+		var type = ""
+		if count >= 5:
+			type = "color"
+		elif count == 4:
+			if group.get("orientation", "") == "v":
+				type = "row" # Vertical match creates Horizontal bomb (Row clearer)
+			elif group.get("orientation", "") == "h":
+				type = "column" # Horizontal match creates Vertical bomb (Column clearer)
+		if type != "":
+			var k = _vec2_key(creation_pos) + ":" + type
+			if not creation_keys.has(k):
+				powerup_creations.append({"pos": creation_pos, "type": type})
+				creation_keys[k] = true
+
+	# Apply specials (existing logic)
+	var matched_dots = _apply_specials_and_collect(groups) # Note: this might duplicate dots, but set ensures uniqueness
+	
 	if matched_dots.size() > 0:
-		print("Matches found: ", matched_dots.size())
-		for dot in matched_dots:
-			var grid_pos = pixel_to_grid(dot.position.x, dot.position.y)
-			print("  - Dot at ", grid_pos, " with color ", dot.color)
+		# Mark dots for powerup creation so they aren't destroyed yet
+		for creation in powerup_creations:
+			var p = creation["pos"]
+			var d = all_dots[int(p.x)][int(p.y)]
+			if d != null:
+				d.set_meta("transform_to_powerup", creation["type"])
+				# Remove from matched_dots so it doesn't fade out
+				if matched_dots.has(d):
+					matched_dots.erase(d)
+					d.matched = false # Unmark match
 		
+		print("Matches found: ", matched_dots.size())
 		process_match_animations(matched_dots)
 		destroy_timer.start()
 	else:
@@ -1235,7 +1480,33 @@ func destroy_matches():
 					glasses_triggered = true
 					glasses_center = dot.global_position
 				
+				# --- Powerup Activation ---
+				if dot.get("is_powerup"):
+					dot.activate_powerup()
+					# Trigger effect
+					var type = dot.get("powerup_type")
+					if type == "row":
+						_destroy_row(j)
+					elif type == "column":
+						_destroy_column(i)
+					elif type == "color":
+						_destroy_color(dot.color)
+				# --------------------------
+
+				# --- Powerup Creation ---
+				if dot.has_meta("transform_to_powerup"):
+					var p_type = dot.get_meta("transform_to_powerup")
+					dot.remove_meta("transform_to_powerup")
+					dot.matched = false # Cancel destruction
+					dot.make_powerup(p_type)
+					if AudioManager != null:
+						AudioManager.play_sound("powerup_create")
+					continue # Skip destruction
+				# ------------------------
+
 				var particles = match_particles.instance()
+				if _mobile_tuning_enabled and particles is Particles2D:
+					particles.amount = max(6, int(particles.amount * 0.5))
 				particles.position = dot.position
 				add_child(particles)
 				if not dot.orb_spawned:
@@ -1271,7 +1542,8 @@ func destroy_matches():
 				PlayerManager.add_xp(boosted - points_earned)
 			_xp_mult_remaining -= 1
 		PlayerManager.add_lines_cleared(match_count)
-		PlayerManager.update_best_combo(combo_counter)
+		var combo_display = combo_counter
+		PlayerManager.update_best_combo(combo_display)
 		combo_counter += 1
 		_failed_attempts = 0
 		_restart_idle_timers()
@@ -1296,8 +1568,28 @@ func destroy_matches():
 				match_label.rect_global_position = screen_pos
 			else:
 				match_label.global_position = screen_pos
+			if combo_display >= 2:
+				var combo_label = match_label_scene.instance()
+				combo_label.text = "Combo x" + str(combo_display)
+				get_parent().get_node("CanvasLayer").add_child(combo_label)
+				var combo_pos = to_global(match_center - Vector2(0, 44))
+				if combo_label is Control:
+					combo_label.rect_global_position = combo_pos
+				else:
+					combo_label.global_position = combo_pos
 	
 	move_checked = true
+	
+	# --- MODIFIED: Check Too Cool win condition BEFORE sunglasses reset ---
+	if was_matched and too_cool_hit:
+		objective_goal_count = 0
+		game_ui.update_goal_count(objective_goal_count)
+		_too_cool_active = false
+		_too_cool_dot = null
+		check_game_over_conditions(true)
+		return
+	# --------------------------------------------------------------------
+
 	if SUNGLASSES_ENABLED and glasses_triggered:
 		_glasses_active = false
 		_glasses_target = null
@@ -1331,14 +1623,72 @@ func destroy_matches():
 				_trigger_arrest_event(String(present[0]))
 	
 	if was_matched:
-		if too_cool_hit:
-			objective_goal_count = 0
-			game_ui.update_goal_count(objective_goal_count)
-			_too_cool_active = false
-			_too_cool_dot = null
-			check_game_over_conditions(true)
-			return
+		# too_cool_hit logic moved up
 		check_game_over_conditions()
+
+# --- Powerup Helper Functions ---
+func _destroy_row(row: int):
+	for i in range(width):
+		var d = all_dots[i][row]
+		if d != null and not d.matched:
+			d.matched = true
+			# Chain reaction: if it's a powerup, activate it too
+			if d.get("is_powerup"):
+				d.activate_powerup()
+				var type = d.get("powerup_type")
+				if type == "row":
+					_destroy_row(row) # Recursive but safe as we check matched
+				elif type == "column":
+					_destroy_column(i)
+				elif type == "color":
+					_destroy_color(d.color)
+			
+			d.play_match_animation(0.1 + i * 0.05)
+			if not d.is_connected("match_faded", self, "_on_dot_match_faded"):
+				d.connect("match_faded", self, "_on_dot_match_faded")
+
+func _destroy_column(col: int):
+	for j in range(height):
+		var d = all_dots[col][j]
+		if d != null and not d.matched:
+			d.matched = true
+			if d.get("is_powerup"):
+				d.activate_powerup()
+				var type = d.get("powerup_type")
+				if type == "row":
+					_destroy_row(j)
+				elif type == "column":
+					_destroy_column(col)
+				elif type == "color":
+					_destroy_color(d.color)
+			
+			d.play_match_animation(0.1 + j * 0.05)
+			if not d.is_connected("match_faded", self, "_on_dot_match_faded"):
+				d.connect("match_faded", self, "_on_dot_match_faded")
+
+func _destroy_color(target_color: String):
+	var delay = 0.0
+	for i in range(width):
+		for j in range(height):
+			var d = all_dots[i][j]
+			if d != null and not d.matched and d.color == target_color:
+				d.matched = true
+				if d.get("is_powerup"):
+					d.activate_powerup()
+					# Chain reaction
+					var type = d.get("powerup_type")
+					if type == "row":
+						_destroy_row(j)
+					elif type == "column":
+						_destroy_column(i)
+					elif type == "color":
+						_destroy_color(d.color) # Should be rare
+				
+				d.play_match_animation(0.1 + delay)
+				if not d.is_connected("match_faded", self, "_on_dot_match_faded"):
+					d.connect("match_faded", self, "_on_dot_match_faded")
+				delay += 0.02
+# ------------------------------
 
 	
 func _dots_match(a, b) -> bool:
@@ -1504,7 +1854,9 @@ func _compute_match_groups() -> Array:
 				run.append(Vector2(k, j))
 				k += 1
 			if run.size() >= 3:
-				groups.append({"positions": run.duplicate(), "orientation": "h"})
+				var first_dot = all_dots[run[0].x][run[0].y]
+				var c = first_dot.color if first_dot else ""
+				groups.append({"positions": run.duplicate(), "orientation": "h", "color": c})
 			i = k if k > start_i else i + 1
 	for i in range(width):
 		var j = 0
@@ -1520,7 +1872,9 @@ func _compute_match_groups() -> Array:
 				run2.append(Vector2(i, k2))
 				k2 += 1
 			if run2.size() >= 3:
-				groups.append({"positions": run2.duplicate(), "orientation": "v"})
+				var first_dot = all_dots[run2[0].x][run2[0].y]
+				var c = first_dot.color if first_dot else ""
+				groups.append({"positions": run2.duplicate(), "orientation": "v", "color": c})
 			j = k2 if k2 > start_j else j + 1
 	return groups
 
@@ -1529,20 +1883,8 @@ func _apply_specials_and_collect(groups: Array) -> Array:
 	var to_match: Array = []
 	for g in groups:
 		var pos: Array = g["positions"]
-		var wildcard_pos = null
-		if pos.size() >= 5:
-			var center_idx = int(pos.size() / 2)
-			wildcard_pos = pos[center_idx]
 		# Standard triple (or larger) – match all in this run
-		var run_len = pos.size()
-		if run_len == 4:
-			_mark_line_clear(pos, g["orientation"], to_match)
 		for p3 in pos:
-			if wildcard_pos != null and p3 == wildcard_pos:
-				var special_dot = all_dots[p3.x][p3.y]
-				if special_dot != null and not special_dot.is_wildcard:
-					special_dot.set_wildcard(true)
-				continue
 			var d3 = all_dots[p3.x][p3.y]
 			if d3 != null and not d3 in to_match:
 				to_match.append(d3)
@@ -1782,7 +2124,6 @@ func check_game_over_conditions(force_win_check = false):
 		LevelManagerScript.GoalType.TOO_COOL:
 			if objective_goal_count <= 0:
 				win = true
-		
 	if win:
 		game_over(true)
 		return true
@@ -1804,12 +2145,13 @@ func game_over(win):
 				print("ERROR: PlayerManager does not have complete_level method.")
 	else:
 		print("GAME OVER - Out of moves!")
-		# You can play a failure sound here
+		# You can play a failure sound here if desired.
 	
 	yield(get_tree().create_timer(2.0), "timeout")
 	if get_tree() and not win:
 		get_tree().change_scene("res://Scenes/Menu.tscn")
 # --- End Game Over Logic ---
+
 
 func _on_idle_timer_timeout():
 	var dot_to_yawn = find_potential_match()
@@ -2212,7 +2554,13 @@ func _on_level_up(new_level):
 	if LevelManager != null:
 		level_data = LevelManager.get_level_data(current_level_num)
 	current_goal_type = level_data.get("goal_type", LevelManagerScript.GoalType.SCORE)
-	game_ui.set_level_goal(level_data)
+	
+	# --- FIX: Ensure UI goal text is reset before setting new goal ---
+	if game_ui.has_method("set_level_goal"):
+		# Force a reset of the goal text first to clear any stale state
+		game_ui._goal_label.text = "Goal: --" 
+		game_ui.set_level_goal(level_data)
+	# ---------------------------------------------------------------
 	
 	if current_goal_type == LevelManagerScript.GoalType.SCORE:
 		target_score = level_data.get("target_score", 10000)
@@ -2241,9 +2589,21 @@ func _on_level_up(new_level):
 
 func celebrate_stage_transition(new_level):
 	state = wait
+	
+	# --- NEW: Show XP conversion overlay ---
+	if game_ui.has_method("show_xp_conversion"):
+		game_ui.show_xp_conversion()
+	# ---------------------------------------
+	
 	yield(play_wave_animation(), "completed")
 	yield(play_dance_animation(), "completed")
 	yield(show_stage_banner(new_level), "completed")
+	
+	# --- NEW: Hide XP conversion overlay ---
+	if game_ui.has_method("hide_xp_conversion"):
+		game_ui.hide_xp_conversion()
+	# ---------------------------------------
+	
 	state = move
 	_synchronize_after_move()
 
@@ -2346,3 +2706,40 @@ func _exit_tree():
 	for t in [destroy_timer, collapse_timer, refill_timer, idle_timer, inactivity_timer]:
 		if t != null:
 			t.stop()
+
+# --- NEW: Boss Attack Helper ---
+func _slime_random_dots():
+	var targets = []
+	for i in range(width):
+		for j in range(height):
+			if all_dots[i][j] != null and not all_dots[i][j].is_ingredient and not all_dots[i][j].is_wildcard:
+				targets.append(Vector2(i, j))
+	
+	targets.shuffle()
+	var num_to_slime = min(targets.size(), 3) # Slime up to 3 dots
+	
+	for k in range(num_to_slime):
+		var grid_pos = targets[k]
+		var i = int(grid_pos.x)
+		var j = int(grid_pos.y)
+		var dot = all_dots[i][j]
+		
+		if dot != null:
+			var particles = match_particles.instance()
+			particles.position = dot.position
+			particles.modulate = Color.green # Slime color
+			add_child(particles)
+			
+			dot.queue_free()
+			all_dots[i][j] = null
+	
+	# Trigger refill
+	get_tree().create_timer(0.5).connect("timeout", self, "_on_destroy_timer_timeout")
+
+func _on_destroy_timer_timeout() -> void:
+	# Fallback used by delayed effects (e.g., boss slime) to resume collapse/refill.
+	if collapse_timer != null and collapse_timer.is_stopped():
+		collapse_timer.start()
+
+
+# -------------------------------

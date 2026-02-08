@@ -34,6 +34,15 @@ func _ready():
 	buy_bg4.visible = false
 	# Initialize volume sliders
 	_init_volume_sliders()
+	
+	# Add Reset Button
+	var reset_btn = Button.new()
+	reset_btn.text = "Reset Progress"
+	reset_btn.connect("pressed", self, "_on_reset_pressed")
+	# Add it before the Resume button if possible, or just append to VBox
+	$Center/VBox.add_child(reset_btn)
+	# Move it to the bottom or top? Default append is bottom.
+
 
 func show_menu():
 	show()
@@ -134,3 +143,11 @@ func _update_music_label(db):
 func _update_sfx_label(db):
 	var pct = int(round(db2linear(db) * 100.0)) if typeof(db) != TYPE_NIL else 0
 	sfx_percent.text = str(pct) + "%"
+
+func _on_reset_pressed():
+	if PlayerManager != null:
+		PlayerManager.reset_progress()
+		print("Progress reset requested.")
+		get_tree().paused = false
+		get_tree().change_scene("res://Scenes/Menu.tscn")
+

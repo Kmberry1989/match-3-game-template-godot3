@@ -1,43 +1,37 @@
-This repository is a Godot-based Match-3 game template. The following notes are focused, actionable guidance to help AI coding agents be productive editing and extending this project.
+# GitHub Copilot Instructions for Match-3 Game Template
 
-Key areas to read first
-- Scenes/: contains the main scenes. Start with `Scenes/Game.tscn`, `Scenes/GameUI.tscn`, and `Scenes/Dot.tscn` to understand entity structure and node hierarchies.
-- Scripts/: gameplay logic lives here. Important files:
-  - `Scripts/Grid.gd` — core matchfinding, spawning, input handling, and game loop (grid coordinate ↔ pixel mapping).
-  - `Scripts/Dot.gd` — per-dot visuals and animations (textures, tweens, state machine for idle/blink/match).
-  - `Scripts/GameUI.gd`, `Scripts/PlayerManager.gd`, `Scripts/NetworkManager.gd`, `Scripts/AudioManager.gd` — UI, persistence, multiplayer glue, and audio.
+## Overview
+This repository is a Godot-based Match-3 game template that includes a lightweight multiplayer feature using WebSockets. The architecture is designed to facilitate easy integration of gameplay mechanics, UI management, and network communication.
 
-Big-picture architecture
-- Single-process Godot game: Scenes are composed of Nodes; logic is GDScript in `Scripts/`.
-- Responsibilities:
-  - Grid.gd: game state, spawn/destroy/refill logic, match detection, timers and score updates.
-  - Dot.gd: individual dot behavior, animations, and textures. Dots are instances of `Scenes/Dots/*.tscn`.
-  - GameUI.gd: displays score, player names and feeds events from Grid.
-  - NetworkManager.gd: optional WebSocket-based multiplayer; Grid checks `NetworkManager.peer` to decide multiplayer flows.
+## Big Picture Architecture
+- **Scenes**: The main scenes are located in the `Scenes/` directory, including `Game.tscn` for the main gameplay and `GameUI.tscn` for the user interface. Each scene is composed of various nodes that represent game elements.
+- **Scripts**: Core gameplay logic is implemented in the `Scripts/` directory. Key scripts include:
+  - `Grid.gd`: Manages the game grid, including match detection and state management.
+  - `GameUI.gd`: Handles the user interface elements and player information display.
+  - `PlayerManager.gd`: Manages player data and interactions.
+  - `NetworkManager.gd`: Manages WebSocket connections and multiplayer interactions.
 
-Conventions & patterns (project-specific)
-- Indexing/loops: code uses numeric width/height exported properties. Iterate with `for i in range(width):` not `for i in width:` (many files already follow this after fixes).
-- Grid coordinates: `grid_to_pixel(column,row)` and `pixel_to_grid(x,y)` are the single source of truth for placement. Use these when moving dots.
-- Timers & tweens: Many animations use `get_tree().create_tween()` and `Timer.new()` nodes. For repeating tweens, the project uses `set_loops(-1)` to make intent explicit.
-- Textures: Dot textures are loaded from `res://Assets/Dots/<character>avatar*.png`. Use `Dot.color` → `color_to_character` mapping in `Dot.gd` when adding new colors/characters.
-- Time API: project mixes `Time.get_unix_time_from_system()` and `OS.get_ticks_msec()` in places — do not globally change API without confirming the Godot engine version used by the project.
+## Developer Workflows
+- **Running the Game**: Open `Scenes/Game.tscn` in the Godot editor and press Play (F5) to start the game.
+- **Testing Multiplayer**: Run the Node.js server located in `Server/` using `npm install` followed by `npm start`. Ensure the server URL is configured in the project settings.
+- **Debugging**: Use the Godot debugger to inspect runtime errors and variable states. Check the output console for WebSocket connection issues.
 
-Developer workflows
-- Open the project in Godot Editor (recommended) for scene inspection and runtime testing. The project root contains `project.godot`.
-- Quick manual smoke tests:
-  - Open `Scenes/Game.tscn` and press Play (F5) to run the main scene.
-  - Use the Godot Output/Debugger to see runtime errors (missing nodes, API mismatches).
-- Linting/build: There is no automated build file. Validate GDScript by running in the Godot editor or using `godot --script` checks if available locally.
+## Project-Specific Conventions
+- **Node Structure**: Use `get_node_or_null()` to safely access nodes, preventing runtime errors if nodes are missing.
+- **Signals**: Utilize signals for communication between scripts, such as `game_started` in `NetworkManager.gd` to trigger game start events.
+- **Exported Variables**: Use `export` for variables that need to be configurable in the Godot editor, such as grid dimensions and offsets.
 
-Integration points & external deps
-- NetworkManager (WebSocket): `Scripts/NetworkManager.gd` exposes a `peer` and signals `opponent_score_updated`, `server_disconnected` used by `Grid.gd` for multiplayer state. Treat multiplayer code paths as optional; check `is_multiplayer` guard before changes.
-- PlayerManager: responsible for persisting player data (score, objectives). `Grid.gd` calls `PlayerManager.save_player_data()` on disconnect.
-- AudioManager: central audio playback via `AudioManager.play_sound(name)`; reuse its keys for new sounds.
+## Integration Points
+- **WebSocket Communication**: The `NetworkManager.gd` script handles all WebSocket interactions, emitting signals for game state changes and player actions.
+- **Player Management**: The `PlayerManager.gd` script maintains player data and communicates with the `AudioManager.gd` for sound effects.
+- **Level Management**: The `Grid.gd` script integrates with `LevelManager.gd` to manage level objectives and player progress.
 
-Safe automated edits an AI can perform
-- Fix invalid loop constructs (e.g., change `for i in width:` → `for i in range(width):`). Example: `Grid.gd`.
-- Initialize typed node/tween vars to `null` to avoid static warnings (e.g., `var tween: Tween = null`). Example: `Background.gd`, `Dot.gd`.
-- Make infinite tweens explicit: use `.set_loops(-1)` rather than `.set_loops()` with no args. Example: `Dot.gd` and `Background.gd`.
+## Examples
+- **Creating a New Dot**: In `Grid.gd`, new dots are instantiated from preloaded scenes, ensuring efficient memory usage and quick access.
+- **Handling Player Input**: The `GameUI.gd` script updates player information dynamically based on events emitted from the `PlayerManager.gd`.
+
+## Conclusion
+This document serves as a guide for AI coding agents to navigate and understand the structure and workflows of the Match-3 game template. For further assistance, refer to the specific scripts and scenes mentioned above.
 - Repair obvious identifier typos (`self_modulate` → `modulate`). Example: `Background.gd`.
 
 Risky changes to avoid without confirmation

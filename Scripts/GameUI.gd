@@ -16,6 +16,9 @@ onready var frame_sprite = $MarginContainer/HBoxContainer/PlayerInfo/HBox/Avatar
 onready var player_avatar = $MarginContainer/HBoxContainer/PlayerInfo/HBox/AvatarFrame/PlayerAvatar
 var _avatar_photo = null
 var _avatar_nudged: bool = false
+var _xp_convert_overlay: TextureRect = null
+var _xp_convert_tween = null
+
 
 # MEANER METER UI reference
 var _meaner_bar = null
@@ -23,7 +26,6 @@ var _meaner_label = null
 
 # Lightweight HUD elements for level objectives/moves
 var _hud_root: Control = null
-var _moves_label: Label = null
 var _goal_label: Label = null
 var _goal_count_label: Label = null
 const LevelManagerScript = preload("res://Scripts/LevelManager.gd")
@@ -51,8 +53,10 @@ func _ready():
 		set_player_name(PlayerManager.get_player_name())
 		update_level_label(PlayerManager.get_current_level())
 		update_xp_label()
-		if not PlayerManager.is_connected("level_up", self, "update_level_label"):
-			PlayerManager.connect("level_up", self, "update_level_label")
+		if PlayerManager.is_connected("level_up", self, "update_level_label"):
+			PlayerManager.disconnect("level_up", self, "update_level_label")
+		if not PlayerManager.is_connected("level_up", self, "_on_level_up"):
+			PlayerManager.connect("level_up", self, "_on_level_up")
 		if not PlayerManager.is_connected("coins_changed", self, "_on_coins_changed"):
 			PlayerManager.connect("coins_changed", self, "_on_coins_changed")
 		if not PlayerManager.is_connected("frame_changed", self, "_on_frame_changed"):
@@ -107,10 +111,6 @@ func _ensure_level_hud():
 	vb.name = "VBox"
 	vb.add_constant_override("separation", 2)
 	_hud_root.add_child(vb)
-	_moves_label = Label.new()
-	_moves_label.name = "MovesLabel"
-	_moves_label.text = "Moves: -"
-	vb.add_child(_moves_label)
 	_goal_label = Label.new()
 	_goal_label.name = "GoalLabel"
 	_goal_label.text = "Goal: --"
@@ -151,6 +151,8 @@ func update_goal_count(count: int) -> void:
 	_ensure_level_hud()
 	if _goal_count_label:
 		_goal_count_label.text = "Remaining: " + str(count)
+
+# Called from Grid.gd to show remaining moves for move-limited levels
 
 
 # Ensure label node references exist (handles alternate scene structures)
@@ -279,7 +281,55 @@ func _ensure_avatar_photo_node():
 		_avatar_photo.rect_min_size = Vector2(150, 150)
 		_avatar_photo.rect_size = Vector2(150, 150)
 		_ensure_avatar_layering()
+		
+		# Create XP conversion overlay if missing
+		if _xp_convert_overlay == null:
+			_xp_convert_overlay = TextureRect.new()
+			_xp_convert_overlay.name = "XPConvertOverlay"
+			_xp_convert_overlay.texture = load("res://Assets/Visuals/xp_gold_convert.png")
+			_xp_convert_overlay.expand = true
+			_xp_convert_overlay.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			_xp_convert_overlay.rect_min_size = Vector2(150, 150)
+			_xp_convert_overlay.rect_size = Vector2(150, 150)
+			_xp_convert_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_xp_convert_overlay.modulate = Color(1, 1, 1, 0.0)
+			_xp_convert_overlay.visible = false
+			# Add as sibling to be drawn on top (or child of frame parent)
+			player_avatar.get_parent().add_child(_xp_convert_overlay)
+			# Position it same as avatar
+			_xp_convert_overlay.rect_position = player_avatar.rect_position
+			if _xp_convert_overlay.has_method("set_z_index"):
+				_xp_convert_overlay.set_z_index(2000)
+			_xp_convert_overlay.raise()
 		return
+
+func show_xp_conversion():
+	_ensure_avatar_photo_node()
+	if _xp_convert_overlay != null:
+		_xp_convert_overlay.rect_position = player_avatar.rect_position
+		_xp_convert_overlay.visible = true
+		_xp_convert_overlay.raise()
+		_xp_convert_overlay.modulate = Color(1, 1, 1, 0.0)
+		_xp_convert_overlay.rect_scale = Vector2(0.7, 0.7)
+		if _xp_convert_tween != null and is_instance_valid(_xp_convert_tween):
+			if _xp_convert_tween.has_method("kill"):
+				_xp_convert_tween.kill()
+		_xp_convert_tween = create_tween()
+		_xp_convert_tween.set_parallel(true)
+		_xp_convert_tween.tween_property(_xp_convert_overlay, "rect_scale", Vector2(1.0, 1.0), 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		_xp_convert_tween.tween_property(_xp_convert_overlay, "modulate:a", 1.0, 0.2)
+		_xp_convert_tween.set_parallel(false)
+		_xp_convert_tween.tween_interval(0.45)
+		_xp_convert_tween.tween_property(_xp_convert_overlay, "modulate:a", 0.0, 0.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		_xp_convert_tween.connect("finished", self, "hide_xp_conversion")
+
+func hide_xp_conversion():
+	if _xp_convert_overlay != null:
+		_xp_convert_overlay.modulate = Color(1, 1, 1, 0.0)
+		_xp_convert_overlay.visible = false
+
+func _on_level_up(new_level):
+	update_level_label(new_level)
 
 func _update_avatar_photo():
 	_ensure_avatar_photo_node()

@@ -20,38 +20,28 @@ enum GoalType {
 # We will only define levels for Score, Jailbreak, and Down to Earth
 const LEVELS = {
 	1: {
-		"moves": 30,
 		"goal_type": GoalType.SCORE,
 		"goal_text": "Reach 1,000 Points!",
 		"target_score": 1000
 	},
 	2: {
-		"moves": 25,
 		"goal_type": GoalType.DOWN_TO_EARTH,
 		"goal_text": "Collect 3 Keys!",
 		"ingredient_positions": [ [1, 0], [3, 0], [5, 0] ], # Spawn 3 ingredients at top
-		"disabled": true
 	},
 	3: {
-		"moves": 30,
 		"goal_type": GoalType.JAILBREAK,
 		"goal_text": "Break out of Jail!",
 		"initial_jail_color": "red" # Trigger Meaner's Mischief for 'red' at start
 	},
 	4: {
-		"moves": 40,
+		"disabled": true,
 		"goal_type": GoalType.EXTERMINATE,
 		"goal_text": "Defeat Mister Meaner!",
 		"boss_position": [2, 2], # Top-left corner of the 2x2 boss
 		"boss_health": 20
 	},
 	5: {
-		"moves": 1,
-		"goal_type": GoalType.AVATAR_RESCUE,
-		"goal_text": "Match the Cool Dot!"
-	},
-	6: {
-		"moves": 25,
 		"goal_type": GoalType.TOO_COOL,
 		"goal_text": "Match the Cool Dude!"
 	}

@@ -17,6 +17,13 @@ var is_ingredient = false # Is this a "Down to Earth" item?
 var is_boss = false
 var is_too_cool = false
 
+# --- Powerup Variables ---
+var is_powerup = false
+var powerup_type = "" # "row", "column", "color"
+var powerup_overlay = null
+var powerup_overlay_tween = null
+# -------------------------
+
 
 # --- Re-added Signals (Were missing from pasted code) ---
 signal dot_clicked(dot) # Emitted when the dot is clicked
@@ -46,7 +53,7 @@ var orb_spawned = false
 onready var flash_texture = preload("res://Assets/Visuals/bright_flash.png")
 
 # Animation state and textures
-var animation_state = "normal"  # normal, blinking, sad, idle, surprised
+var animation_state = "normal" # normal, blinking, sad, idle, surprised
 var normal_texture
 var blink_texture
 var sad_texture
@@ -63,7 +70,6 @@ var wildcard_textures = []
 var _wildcard_index = 0
 
  
-
 # Mapping from color to character name
 var color_to_character = {
 	"yellow": "bethany",
@@ -127,7 +133,7 @@ func _ready():
 	# ---------------------------------
 
 	# Wait for the sprite texture to be loaded
-	yield(get_tree(), "idle_frame")
+	yield (get_tree(), "idle_frame")
 
 	var texture = sprite.texture
 	if texture:
@@ -142,6 +148,32 @@ func _ready():
 		if new_area.has_method("set_pickable"):
 			new_area.set_pickable(true)
 		new_area.add_child(collision_shape)
+
+func _exit_tree():
+	_stop_all_tweens()
+	if blink_timer:
+		blink_timer.stop()
+	if wildcard_timer:
+		wildcard_timer.stop()
+
+func _stop_all_tweens() -> void:
+	if pulse_tween:
+		pulse_tween.stop_all()
+		if is_instance_valid(pulse_tween):
+			pulse_tween.queue_free()
+		pulse_tween = null
+	if float_tween:
+		float_tween.stop_all()
+		if is_instance_valid(float_tween):
+			float_tween.queue_free()
+		float_tween = null
+	if wobble_tween:
+		wobble_tween.stop_all()
+		if is_instance_valid(wobble_tween):
+			wobble_tween.queue_free()
+		wobble_tween = null
+	_stop_wildcard_glow()
+	_stop_powerup_overlay_pulse()
 
 func _process(_delta):
 	if mouse_inside:
@@ -162,7 +194,7 @@ func make_ingredient():
 	if wobble_tween: wobble_tween.stop_all()
 	
 	# Set the texture (You need to create this asset)
-	sprite.texture = preload("res://Assets/Visuals/ingredient_key.png") 
+	sprite.texture = preload("res://Assets/Visuals/ingredient_key.png")
 	
 	# Hide avatar-specific nodes
 	if jail_overlay: jail_overlay.visible = false
@@ -171,7 +203,61 @@ func make_ingredient():
 	
 	# Restart a simple float
 	start_floating()
-# ------------------------------------------
+
+# --- Powerup Logic ---
+func make_powerup(type: String):
+	is_powerup = true
+	powerup_type = type
+	
+	if powerup_overlay != null:
+		powerup_overlay.queue_free()
+		
+	powerup_overlay = Sprite.new()
+	powerup_overlay.centered = true
+	powerup_overlay.z_index = 1 # Above the dot sprite
+	
+	if type == "row":
+		# Horizontal arrow
+		powerup_overlay.texture = preload("res://Assets/Visuals/arrow_horizontal.png")
+	elif type == "column":
+		# Vertical arrow
+		powerup_overlay.texture = preload("res://Assets/Visuals/arrow_vertical.png")
+	elif type == "color":
+		# Rainbow star or similar
+		powerup_overlay.texture = preload("res://Assets/Visuals/star_rainbow.png")
+		set_wildcard(true) # Color bombs act as wildcards visually
+		
+	add_child(powerup_overlay)
+	
+	# Pulse the overlay
+	_start_powerup_overlay_pulse()
+
+func _start_powerup_overlay_pulse() -> void:
+	_stop_powerup_overlay_pulse()
+	if powerup_overlay == null or not is_instance_valid(powerup_overlay):
+		return
+	powerup_overlay_tween = Tween.new()
+	add_child(powerup_overlay_tween)
+	powerup_overlay_tween.interpolate_property(powerup_overlay, "scale", Vector2(1.0, 1.0), Vector2(1.2, 1.2), 0.5, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+	powerup_overlay_tween.interpolate_property(powerup_overlay, "scale", Vector2(1.2, 1.2), Vector2(1.0, 1.0), 0.5, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+	powerup_overlay_tween.start()
+	powerup_overlay_tween.connect("tween_all_completed", self, "_start_powerup_overlay_pulse")
+
+func _stop_powerup_overlay_pulse() -> void:
+	if powerup_overlay_tween:
+		powerup_overlay_tween.stop_all()
+		if is_instance_valid(powerup_overlay_tween):
+			powerup_overlay_tween.queue_free()
+		powerup_overlay_tween = null
+
+func activate_powerup():
+	# Visual effect for activation
+	if powerup_overlay:
+		_stop_powerup_overlay_pulse()
+		powerup_overlay.queue_free()
+		powerup_overlay = null
+	# The actual destruction logic is handled by Grid.gd
+# ---------------------
 
 # --- MODIFIED Input Handlers ---
 
@@ -270,7 +356,7 @@ func _start_wobble_for(total: float, start_delay: float = 0.0) -> void:
 		# Back to center quickly
 		wobble_tween.interpolate_property(sprite, "rotation_degrees", rot_target, 0.0, step * 0.9, Tween.TRANS_SINE, Tween.EASE_IN_OUT, start_delay + t + step)
 		cur_from = 0.0
-		sgn = -sgn
+		sgn = - sgn
 		t += step * 2.0
 	wobble_tween.start()
 	# Ensure final rotation is reset
@@ -292,11 +378,11 @@ func show_flash():
 	var flash = Sprite.new()
 	flash.texture = flash_texture
 	flash.centered = true
-	flash.modulate = Color(1,1,1,0.7)
+	flash.modulate = Color(1, 1, 1, 0.7)
 	add_child(flash)
 	var tween = Tween.new()
 	add_child(tween)
-	tween.interpolate_property(flash, "scale", Vector2(1,1), Vector2(2,2), 0.3, Tween.TRANS_SINE, Tween.EASE_OUT)
+	tween.interpolate_property(flash, "scale", Vector2(1, 1), Vector2(2, 2), 0.3, Tween.TRANS_SINE, Tween.EASE_OUT)
 	tween.interpolate_property(flash, "modulate:a", 0.7, 0.0, 0.3, Tween.TRANS_SINE, Tween.EASE_OUT)
 	tween.interpolate_callback(flash, 0.3, "queue_free")
 	tween.start()
@@ -319,7 +405,7 @@ func play_surprised_for_a_second():
 		timer.one_shot = true
 		timer.wait_time = 1.0
 		timer.start()
-		yield(timer, "timeout")
+		yield (timer, "timeout")
 		timer.queue_free()
 		if animation_state == "surprised":
 			set_normal_texture()
@@ -327,7 +413,7 @@ func play_surprised_for_a_second():
 func create_shadow():
 	shadow = Sprite.new()
 	var gradient = Gradient.new()
-	gradient.colors = [Color(0,0,0,0.4), Color(0,0,0,0)] # Black center, transparent edge
+	gradient.colors = [Color(0, 0, 0, 0.4), Color(0, 0, 0, 0)] # Black center, transparent edge
 	var gradient_tex = GradientTexture.new()
 	gradient_tex.gradient = gradient
 	gradient_tex.width = 64
@@ -442,7 +528,7 @@ func set_wildcard(enable = true):
 			wildcard_timer.start()
 		# Make the shadow slightly brighter for wildcard
 		if shadow:
-			shadow.modulate = Color(0.2,0.2,0.2,0.6)
+			shadow.modulate = Color(0.2, 0.2, 0.2, 0.6)
 		_ensure_wildcard_glow()
 		_start_wildcard_glow()
 	else:
@@ -519,37 +605,37 @@ func _ensure_wildcard_glow() -> void:
 	wildcard_glow = Sprite.new()
 	wildcard_glow.centered = true
 	wildcard_glow.texture = flash_texture
-	wildcard_glow.modulate = Color(1,0,0,0.55)
+	wildcard_glow.modulate = Color(1, 0, 0, 0.55)
 	wildcard_glow.z_index = -2
 	wildcard_glow.scale = Vector2(1.2, 1.2) * scale_multiplier
 	add_child(wildcard_glow)
 
  
-
 func _start_wildcard_glow() -> void:
 	_stop_wildcard_glow()
 	if wildcard_glow == null:
 		return
 	var seq = [
-		Color(1,0,0,0.55),
-		Color(1,0.6,0,0.55),
-		Color(1,1,0,0.55),
-		Color(0,1,0,0.55),
-		Color(0,1,1,0.55),
-		Color(0,0.4,1,0.55),
-		Color(1,0,1,0.55)
+		Color(1, 0, 0, 0.55),
+		Color(1, 0.6, 0, 0.55),
+		Color(1, 1, 0, 0.55),
+		Color(0, 1, 0, 0.55),
+		Color(0, 1, 1, 0.55),
+		Color(0, 0.4, 1, 0.55),
+		Color(1, 0, 1, 0.55)
 	]
-	wildcard_glow_tween = get_tree().create_tween()
-	wildcard_glow_tween.set_loops()
+	wildcard_glow_tween = Tween.new()
+	add_child(wildcard_glow_tween)
+	var prev = wildcard_glow.modulate
 	for c in seq:
-		wildcard_glow_tween.tween_property(wildcard_glow, "modulate", c, 0.18).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		wildcard_glow_tween.interpolate_property(wildcard_glow, "modulate", prev, c, 0.18, Tween.TRANS_SINE, Tween.EASE_IN_OUT)
+		prev = c
+	wildcard_glow_tween.start()
+	wildcard_glow_tween.connect("tween_all_completed", self, "_start_wildcard_glow")
 
 func _stop_wildcard_glow() -> void:
 	if wildcard_glow_tween != null:
-		if wildcard_glow_tween.has_method("kill"):
-			wildcard_glow_tween.kill()
-		elif wildcard_glow_tween.has_method("stop_all"):
-			wildcard_glow_tween.stop_all()
+		wildcard_glow_tween.stop_all()
 		if is_instance_valid(wildcard_glow_tween):
 			wildcard_glow_tween.queue_free()
 		wildcard_glow_tween = null
@@ -595,7 +681,7 @@ func show_jailbreak_then_clear() -> void:
 	t.set_parallel(true)
 	t.tween_property(sprite, "scale", sprite.scale * 1.25, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	t.tween_property(jail_overlay, "modulate:a", 0.0, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	yield(t, "finished")
+	yield (t, "finished")
 	clear_jail_overlay()
 	reset_to_normal_state()
 	# Remove this dot entirely after the break animation
@@ -629,7 +715,7 @@ func _on_blink_timer_timeout():
 		timer.one_shot = true
 		timer.wait_time = 0.15
 		timer.start()
-		yield(timer, "timeout")
+		yield (timer, "timeout")
 		timer.queue_free()
 		if animation_state == "blinking": # Ensure state wasn't changed by a higher priority animation
 			set_normal_texture()
@@ -655,7 +741,7 @@ func play_idle_animation():
 	timer.one_shot = true
 	timer.wait_time = 2.5
 	timer.start()
-	yield(timer, "timeout")
+	yield (timer, "timeout")
 	timer.queue_free()
 	
 	if animation_state == "idle": # Make sure we weren't interrupted
@@ -679,7 +765,7 @@ func play_idle_animation():
 		tween.interpolate_property(shadow, "scale", original_shadow_scale, original_shadow_scale * 2.5, 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
 		tween.interpolate_property(shadow, "modulate:a", original_shadow_opacity, 0.0, 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
 		tween.start()
-		yield(tween, "tween_all_completed")
+		yield (tween, "tween_all_completed")
 
 		if animation_state == "idle":
 			var down_tween = Tween.new()
@@ -689,6 +775,6 @@ func play_idle_animation():
 			down_tween.interpolate_property(shadow, "scale", shadow.scale, original_shadow_scale, 1.0)
 			down_tween.interpolate_property(shadow, "modulate:a", shadow.modulate.a, original_shadow_opacity, 1.0)
 			down_tween.start()
-			yield(down_tween, "tween_all_completed")
+			yield (down_tween, "tween_all_completed")
 			set_normal_texture()
 			start_pulsing()
