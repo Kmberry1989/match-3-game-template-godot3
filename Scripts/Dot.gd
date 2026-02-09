@@ -24,6 +24,7 @@ var is_powerup = false
 var powerup_type = "" # "row", "column", "color"
 var powerup_overlay = null
 var powerup_overlay_tween = null
+var powerup_spawn_tween = null
 # -------------------------
 
 
@@ -254,8 +255,8 @@ func make_powerup(type: String):
 		
 	add_child(powerup_overlay)
 	
-	# Pulse the overlay
-	_start_powerup_overlay_pulse()
+	# Spawn flash, then pulse the overlay
+	_play_powerup_spawn_flash()
 
 func _start_powerup_overlay_pulse() -> void:
 	_stop_powerup_overlay_pulse()
@@ -274,6 +275,33 @@ func _stop_powerup_overlay_pulse() -> void:
 		if is_instance_valid(powerup_overlay_tween):
 			powerup_overlay_tween.queue_free()
 		powerup_overlay_tween = null
+
+func _play_powerup_spawn_flash() -> void:
+	_stop_powerup_overlay_pulse()
+	if powerup_spawn_tween:
+		powerup_spawn_tween.stop_all()
+		if is_instance_valid(powerup_spawn_tween):
+			powerup_spawn_tween.queue_free()
+		powerup_spawn_tween = null
+	if powerup_overlay == null or not is_instance_valid(powerup_overlay):
+		return
+	powerup_overlay.scale = Vector2(0.8, 0.8)
+	powerup_overlay.modulate = Color(1, 1, 1, 0.0)
+	powerup_spawn_tween = Tween.new()
+	add_child(powerup_spawn_tween)
+	powerup_spawn_tween.interpolate_property(powerup_overlay, "modulate:a", 0.0, 1.0, 0.15, Tween.TRANS_SINE, Tween.EASE_OUT)
+	powerup_spawn_tween.interpolate_property(powerup_overlay, "scale", Vector2(0.8, 0.8), Vector2(1.25, 1.25), 0.18, Tween.TRANS_BACK, Tween.EASE_OUT)
+	powerup_spawn_tween.interpolate_property(powerup_overlay, "scale", Vector2(1.25, 1.25), Vector2(1.0, 1.0), 0.12, Tween.TRANS_SINE, Tween.EASE_IN_OUT, 0.12)
+	powerup_spawn_tween.start()
+	powerup_spawn_tween.connect("tween_all_completed", self, "_on_powerup_spawn_flash_finished")
+
+func _on_powerup_spawn_flash_finished() -> void:
+	if powerup_spawn_tween:
+		powerup_spawn_tween.stop_all()
+		if is_instance_valid(powerup_spawn_tween):
+			powerup_spawn_tween.queue_free()
+		powerup_spawn_tween = null
+	_start_powerup_overlay_pulse()
 
 func activate_powerup():
 	# Visual effect for activation

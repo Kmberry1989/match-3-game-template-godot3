@@ -682,20 +682,71 @@ func _apply_particle_pack(particles: Particles2D) -> void:
 			mat.set("initial_velocity", float(visual.get("initial_velocity", mat.get("initial_velocity"))))
 			mat.set("scale", float(visual.get("scale", mat.get("scale"))))
 
-func _apply_combo_style(label: Label) -> void:
+func _apply_combo_style(label: Label) -> Color:
 	if label == null:
-		return
+		return Color(1.0, 0.8, 0.4, 1.0)
 	if PlayerManager == null or not PlayerManager.has_method("get_equipped_cosmetic"):
-		return
+		return Color(1.0, 0.8, 0.4, 1.0)
 	var style_id = String(PlayerManager.get_equipped_cosmetic("combo_style"))
 	var item = CosmeticsCatalog.get_item("combo_style", style_id)
 	var visual = item.get("visual", {})
 	var color = visual.get("color", Color(1.0, 0.8, 0.4, 1.0))
 	label.add_color_override("font_color", color)
+	return color
+
+func _apply_combo_feedback(label: Label, combo_value: int) -> void:
+	if label == null:
+		return
+	var base_color = _apply_combo_style(label)
+	var t = clamp(float(combo_value - 2) / 6.0, 0.0, 1.0)
+	var boosted = base_color.linear_interpolate(Color(1, 1, 1, 1), t * 0.4)
+	label.add_color_override("font_color", boosted)
+	label.rect_scale = Vector2(0.9, 0.9)
+	var tw = get_tree().create_tween()
+	tw.tween_property(label, "rect_scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_property(label, "rect_scale", Vector2(1.0, 1.0), 0.18).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _on_cosmetic_equipped(category: String, id: String) -> void:
 	if category == "dot_skin":
 		_apply_dot_skin_to_all()
+
+func _any_matched_dots() -> bool:
+	for i in range(width):
+		for j in range(height):
+			var d = all_dots[i][j]
+			if d != null and d.matched:
+				return true
+	return false
+
+func _resolve_board_after_settle() -> bool:
+	var groups = _compute_match_groups()
+	if groups.size() == 0:
+		return false
+	var matched_dots = _apply_specials_and_collect(groups)
+	if matched_dots.size() == 0:
+		return false
+	process_match_animations(matched_dots)
+	if destroy_timer != null:
+		destroy_timer.start()
+	return true
+
+func _play_board_ready_feedback() -> void:
+	if AudioManager != null:
+		AudioManager.play_sound("dot_land")
+
+func _unlock_board_if_ready(play_feedback: bool = true) -> bool:
+	if not _timers_idle():
+		return false
+	if _any_matched_dots():
+		return false
+	if _compute_match_groups().size() > 0:
+		return false
+	state = move
+	move_checked = false
+	_synchronize_after_move()
+	if play_feedback:
+		_play_board_ready_feedback()
+	return true
 
 func update_score_display():
 	game_ui.update_xp_label()
@@ -1087,14 +1138,14 @@ func _recover_from_stall_if_needed() -> void:
 		return
 	if not _timers_idle():
 		return
-	var groups = _compute_match_groups()
-	if groups.size() > 0:
-		var matched_dots = _apply_specials_and_collect(groups)
-		if matched_dots.size() > 0:
-			process_match_animations(matched_dots)
-			if destroy_timer != null:
-				destroy_timer.start()
-			return
+	if _any_matched_dots():
+		if destroy_timer != null and destroy_timer.is_stopped():
+			destroy_timer.start()
+		return
+	if _resolve_board_after_settle():
+		return
+	if _unlock_board_if_ready(false):
+		return
 	state = move
 	move_checked = false
 	_synchronize_after_move()
@@ -1635,7 +1686,7 @@ func destroy_matches():
 				var combo_label = match_label_scene.instance()
 				combo_label.text = "Combo x" + str(combo_display)
 				if combo_label is Label:
-					_apply_combo_style(combo_label)
+					_apply_combo_feedback(combo_label, combo_display)
 				get_parent().get_node("CanvasLayer").add_child(combo_label)
 				var combo_pos = to_global(match_center - Vector2(0, 44))
 				if combo_label is Control:
@@ -2131,30 +2182,15 @@ func after_refill():
 			return # Don't check for matches yet
 	# ---------------------------------------------
 	
-	var needs_another_pass = false
-	for i in range(width):
-		for j in range(height):
-			if all_dots[i][j] != null:
-				# --- MODIFIED: Check for ingredients ---
-				if not all_dots[i][j].is_ingredient and match_at(i, j, all_dots[i][j].color):
-				# ---------------------------------------
-					needs_another_pass = true
-					break
-			if needs_another_pass:
-				break
-			
-	if needs_another_pass:
-		find_matches_after_refill()
-	else:
-		state = move
-		move_checked = false
-		_synchronize_after_move()
+	if _resolve_board_after_settle():
+		return
+
+	if _unlock_board_if_ready(true):
 		# --- MODIFIED: Check for win/loss *after* everything settles ---
 		if not check_game_over_conditions():
 			# If game is not over, check for moves
 			yield(ensure_moves_available(), "completed")
-			state = move
-			_synchronize_after_move()
+			_unlock_board_if_ready(false)
 		# -------------------------------------------------------------
 
 func find_matches_after_refill():
