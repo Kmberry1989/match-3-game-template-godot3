@@ -8,7 +8,7 @@ extends Node
 # Define goal types
 enum GoalType {
 	SCORE,
-	JAILBREAK, # This is "Meaner's Mischief"
+	JAILBREAK, # Deprecated: remapped to SCORE at load time.
 	DOWN_TO_EARTH, # This is "Down to Earth"
 	EXTERMINATE,
 	AVATAR_RESCUE,
@@ -72,7 +72,20 @@ func get_level_data(level_num):
 
 	if not LEVELS.has(level_to_load):
 		# This should not happen with the logic above, but as a fallback
-		return LEVELS[1].duplicate(true)
+		return _sanitize_level_data(LEVELS[1].duplicate(true))
 
 	# Create a copy so the original data isn't modified
-	return LEVELS[level_to_load].duplicate(true)
+	return _sanitize_level_data(LEVELS[level_to_load].duplicate(true))
+
+func _sanitize_level_data(level: Dictionary) -> Dictionary:
+	if typeof(level) != TYPE_DICTIONARY:
+		return level
+	# Disable breakout/jail goal globally.
+	if int(level.get("goal_type", GoalType.SCORE)) == int(GoalType.JAILBREAK):
+		level["goal_type"] = GoalType.SCORE
+		if not level.has("target_score"):
+			level["target_score"] = 1500
+		level["goal_text"] = "Reach %d Points!" % int(level.get("target_score", 1500))
+		if level.has("initial_jail_color"):
+			level.erase("initial_jail_color")
+	return level
