@@ -61,6 +61,9 @@ text = "Remember me"
 
 [node name="CancelButton" type="Button" parent="CenterContainer/VBoxContainer"]
 visible = false
+margin_top = 132.0
+margin_right = 160.0
+margin_bottom = 170.0
 text = "Cancel"
 
 [node name="StatusLabel" type="Label" parent="CenterContainer/VBoxContainer"]
@@ -71,10 +74,10 @@ align = 1
 
 [node name="Canyou" type="TextureRect" parent="."]
 visible = false
-margin_left = 52.0
-margin_top = 550.0
-margin_right = 589.0
-margin_bottom = 780.0
+margin_left = 57.0
+margin_top = 650.0
+margin_right = 594.0
+margin_bottom = 880.0
 rect_scale = Vector2( 0.7924, 0.504481 )
 texture = ExtResource( 3 )
 expand = true

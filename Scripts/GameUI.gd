@@ -28,6 +28,14 @@ var _meaner_label = null
 var _hud_root: Control = null
 var _goal_label: Label = null
 var _goal_count_label: Label = null
+var _test_toggle_button: Button = null
+var _test_panel: Panel = null
+var _test_status_label: Label = null
+var _test_busy: bool = false
+var _test_overlay_layer: CanvasLayer = null
+var _test_overlay_root: Control = null
+var _autoplay_badge: Panel = null
+var _autoplay_badge_label: Label = null
 const LevelManagerScript = preload("res://Scripts/LevelManager.gd")
 const BONUS_GAME_SCENES: Dictionary = {
 	"slot_machine": "res://Scenes/BonusSlotMachine.tscn",
@@ -98,6 +106,322 @@ func _ready():
 	# React to avatar changes
 	if PlayerManager != null and PlayerManager.has_signal("avatar_changed") and not PlayerManager.is_connected("avatar_changed", self, "_on_avatar_changed"):
 		PlayerManager.connect("avatar_changed", self, "_on_avatar_changed")
+	# Name-gated autoplay status badge.
+	if _is_otto_player():
+		_add_autoplay_badge()
+	# Name-gated test tools for QA/dev profile only.
+	if _is_test_player():
+		_add_test_menu()
+	_update_autoplay_badge_state()
+
+func _normalized_player_name() -> String:
+	if PlayerManager != null and PlayerManager.has_method("get_player_name"):
+		return String(PlayerManager.get_player_name()).strip_edges().to_lower()
+	return ""
+
+func _is_otto_player() -> bool:
+	return _normalized_player_name() == "otto"
+
+func _is_test_player() -> bool:
+	return _normalized_player_name() == "test"
+
+func _ensure_test_overlay_root() -> Control:
+	var root_scene = get_tree().get_current_scene()
+	if root_scene == null:
+		return self
+	if _test_overlay_layer == null or not is_instance_valid(_test_overlay_layer):
+		_test_overlay_layer = root_scene.get_node_or_null("TestMenuLayer")
+		if _test_overlay_layer == null:
+			_test_overlay_layer = CanvasLayer.new()
+			_test_overlay_layer.name = "TestMenuLayer"
+			root_scene.add_child(_test_overlay_layer)
+		_test_overlay_layer.layer = 2100
+	if _test_overlay_root == null or not is_instance_valid(_test_overlay_root):
+		_test_overlay_root = _test_overlay_layer.get_node_or_null("TestMenuRoot")
+		if _test_overlay_root == null:
+			_test_overlay_root = Control.new()
+			_test_overlay_root.name = "TestMenuRoot"
+			_test_overlay_root.anchor_left = 0.0
+			_test_overlay_root.anchor_top = 0.0
+			_test_overlay_root.anchor_right = 1.0
+			_test_overlay_root.anchor_bottom = 1.0
+			_test_overlay_root.margin_left = 0.0
+			_test_overlay_root.margin_top = 0.0
+			_test_overlay_root.margin_right = 0.0
+			_test_overlay_root.margin_bottom = 0.0
+			_test_overlay_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_test_overlay_layer.add_child(_test_overlay_root)
+	return _test_overlay_root
+
+func _add_autoplay_badge() -> void:
+	if _autoplay_badge != null and is_instance_valid(_autoplay_badge):
+		return
+	_autoplay_badge = Panel.new()
+	_autoplay_badge.name = "AutoplayBadge"
+	_autoplay_badge.anchor_left = 0.0
+	_autoplay_badge.anchor_top = 0.0
+	_autoplay_badge.anchor_right = 0.0
+	_autoplay_badge.anchor_bottom = 0.0
+	_autoplay_badge.margin_left = 12
+	_autoplay_badge.margin_top = 22
+	_autoplay_badge.margin_right = 230
+	_autoplay_badge.margin_bottom = 60
+	_autoplay_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _autoplay_badge.has_method("set_z_index"):
+		_autoplay_badge.set_z_index(3002)
+	var badge_style = StyleBoxFlat.new()
+	badge_style.bg_color = Color(0.12, 0.42, 0.18, 0.95)
+	badge_style.border_color = Color(1, 1, 1, 0.45)
+	badge_style.border_width_left = 2
+	badge_style.border_width_right = 2
+	badge_style.border_width_top = 2
+	badge_style.border_width_bottom = 2
+	badge_style.corner_radius_top_left = 8
+	badge_style.corner_radius_top_right = 8
+	badge_style.corner_radius_bottom_left = 8
+	badge_style.corner_radius_bottom_right = 8
+	_autoplay_badge.add_stylebox_override("panel", badge_style)
+	add_child(_autoplay_badge)
+
+	_autoplay_badge_label = Label.new()
+	_autoplay_badge_label.text = "AUTOPLAY ACTIVE"
+	_autoplay_badge_label.align = Label.ALIGN_CENTER
+	_autoplay_badge_label.valign = Label.VALIGN_CENTER
+	_autoplay_badge_label.anchor_left = 0.0
+	_autoplay_badge_label.anchor_top = 0.0
+	_autoplay_badge_label.anchor_right = 1.0
+	_autoplay_badge_label.anchor_bottom = 1.0
+	_autoplay_badge_label.margin_left = 8
+	_autoplay_badge_label.margin_top = 2
+	_autoplay_badge_label.margin_right = -8
+	_autoplay_badge_label.margin_bottom = -2
+	_autoplay_badge.add_child(_autoplay_badge_label)
+	_update_autoplay_badge_state()
+
+func _update_autoplay_badge_state() -> void:
+	if (_autoplay_badge == null or not is_instance_valid(_autoplay_badge)) and _is_otto_player():
+		_add_autoplay_badge()
+		return
+	if _autoplay_badge == null or not is_instance_valid(_autoplay_badge):
+		return
+	_autoplay_badge.visible = _is_otto_player() and not get_tree().paused
+
+func _process(_delta: float) -> void:
+	_update_autoplay_badge_state()
+
+func _add_test_menu() -> void:
+	if _test_panel != null and is_instance_valid(_test_panel):
+		return
+	var overlay_root = _ensure_test_overlay_root()
+	if overlay_root == null:
+		overlay_root = self
+	_test_toggle_button = Button.new()
+	_test_toggle_button.name = "TestToggleButton"
+	_test_toggle_button.text = "TEST"
+	_test_toggle_button.anchor_left = 1.0
+	_test_toggle_button.anchor_top = 0.0
+	_test_toggle_button.anchor_right = 1.0
+	_test_toggle_button.anchor_bottom = 0.0
+	_test_toggle_button.margin_left = -130
+	_test_toggle_button.margin_top = 96
+	_test_toggle_button.margin_right = -12
+	_test_toggle_button.margin_bottom = 136
+	_test_toggle_button.rect_min_size = Vector2(118, 40)
+	_test_toggle_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	if _test_toggle_button.has_method("set_z_index"):
+		_test_toggle_button.set_z_index(3001)
+	_test_toggle_button.connect("pressed", self, "_on_test_toggle_pressed")
+	overlay_root.add_child(_test_toggle_button)
+
+	_test_panel = Panel.new()
+	_test_panel.name = "TestMenuPanel"
+	_test_panel.anchor_left = 1.0
+	_test_panel.anchor_top = 0.0
+	_test_panel.anchor_right = 1.0
+	_test_panel.anchor_bottom = 0.0
+	_test_panel.margin_left = -330
+	_test_panel.margin_top = 142
+	_test_panel.margin_right = -12
+	_test_panel.margin_bottom = 540
+	_test_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_test_panel.visible = false
+	if _test_panel.has_method("set_z_index"):
+		_test_panel.set_z_index(3000)
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.1, 0.14, 0.95)
+	sb.border_color = Color(1, 1, 1, 0.2)
+	sb.border_width_left = 2
+	sb.border_width_right = 2
+	sb.border_width_top = 2
+	sb.border_width_bottom = 2
+	sb.corner_radius_top_left = 10
+	sb.corner_radius_top_right = 10
+	sb.corner_radius_bottom_left = 10
+	sb.corner_radius_bottom_right = 10
+	_test_panel.add_stylebox_override("panel", sb)
+	overlay_root.add_child(_test_panel)
+
+	var vb = VBoxContainer.new()
+	vb.anchor_left = 0
+	vb.anchor_top = 0
+	vb.anchor_right = 1
+	vb.anchor_bottom = 1
+	vb.margin_left = 10
+	vb.margin_top = 10
+	vb.margin_right = -10
+	vb.margin_bottom = -10
+	vb.add_constant_override("separation", 8)
+	_test_panel.add_child(vb)
+
+	var title = Label.new()
+	title.text = "Testing Menu"
+	title.align = Label.ALIGN_CENTER
+	vb.add_child(title)
+
+	var b_slot = Button.new()
+	b_slot.text = "Play Slot Mini-Game"
+	b_slot.rect_min_size = Vector2(0, 42)
+	b_slot.connect("pressed", self, "_on_test_play_bonus_pressed", ["slot_machine"])
+	vb.add_child(b_slot)
+
+	var b_shelf = Button.new()
+	b_shelf.text = "Play Shelf Sort"
+	b_shelf.rect_min_size = Vector2(0, 42)
+	b_shelf.connect("pressed", self, "_on_test_play_bonus_pressed", ["shelf_sort"])
+	vb.add_child(b_shelf)
+
+	var b_memory = Button.new()
+	b_memory.text = "Play Memory Pairs"
+	b_memory.rect_min_size = Vector2(0, 42)
+	b_memory.connect("pressed", self, "_on_test_play_bonus_pressed", ["memory_pairs"])
+	vb.add_child(b_memory)
+
+	var b_queue = Button.new()
+	b_queue.text = "Queue Bonus Token"
+	b_queue.rect_min_size = Vector2(0, 40)
+	b_queue.connect("pressed", self, "_on_test_queue_token_pressed")
+	vb.add_child(b_queue)
+
+	var b_meter = Button.new()
+	b_meter.text = "Fill Meaner Meter"
+	b_meter.rect_min_size = Vector2(0, 40)
+	b_meter.connect("pressed", self, "_on_test_fill_meter_pressed")
+	vb.add_child(b_meter)
+
+	var b_reward = Button.new()
+	b_reward.text = "Grant 200 Coins + XP"
+	b_reward.rect_min_size = Vector2(0, 40)
+	b_reward.connect("pressed", self, "_on_test_add_resources_pressed")
+	vb.add_child(b_reward)
+
+	var b_lvl = Button.new()
+	b_lvl.text = "Force Level Up"
+	b_lvl.rect_min_size = Vector2(0, 40)
+	b_lvl.connect("pressed", self, "_on_test_level_up_pressed")
+	vb.add_child(b_lvl)
+
+	var b_queue_run = Button.new()
+	b_queue_run.text = "Run Bonus Queue Now"
+	b_queue_run.rect_min_size = Vector2(0, 40)
+	b_queue_run.connect("pressed", self, "_on_test_run_bonus_queue_pressed")
+	vb.add_child(b_queue_run)
+
+	_test_status_label = Label.new()
+	_test_status_label.text = "Ready."
+	_test_status_label.autowrap = true
+	_test_status_label.align = Label.ALIGN_CENTER
+	vb.add_child(_test_status_label)
+
+func _set_test_status(msg: String) -> void:
+	if _test_status_label != null and is_instance_valid(_test_status_label):
+		_test_status_label.text = msg
+
+func _on_test_toggle_pressed() -> void:
+	if _test_panel == null:
+		return
+	_test_panel.visible = not _test_panel.visible
+
+func _on_test_play_bonus_pressed(game_id: String) -> void:
+	if _test_busy:
+		_set_test_status("Busy...")
+		return
+	_test_busy = true
+	_set_test_status("Launching %s..." % game_id)
+	var result = play_bonus_game(game_id)
+	if result is GDScriptFunctionState:
+		result = yield(result, "completed")
+	var status = "completed"
+	if typeof(result) == TYPE_DICTIONARY:
+		status = String(result.get("status", "completed"))
+	_set_test_status("Mini-game finished: %s" % status)
+	_test_busy = false
+
+func _on_test_queue_token_pressed() -> void:
+	if PlayerManager != null and PlayerManager.has_method("queue_bonus_game_token"):
+		PlayerManager.queue_bonus_game_token("test_menu")
+		_set_test_status("Queued 1 bonus token.")
+	else:
+		_set_test_status("queue_bonus_game_token unavailable.")
+
+func _on_test_fill_meter_pressed() -> void:
+	if PlayerManager != null and PlayerManager.has_method("add_to_meaner_meter"):
+		var cur = 0
+		var mx = 100
+		if PlayerManager.has_method("get_meaner_meter_current"):
+			cur = int(PlayerManager.get_meaner_meter_current())
+		if PlayerManager.has_method("get_meaner_meter_max"):
+			mx = int(PlayerManager.get_meaner_meter_max())
+		PlayerManager.add_to_meaner_meter(max(1, mx - cur))
+		_set_test_status("Meaner meter filled.")
+	else:
+		_set_test_status("add_to_meaner_meter unavailable.")
+
+func _on_test_add_resources_pressed() -> void:
+	if PlayerManager != null and PlayerManager.has_method("apply_bonus_reward"):
+		PlayerManager.apply_bonus_reward({"coins": 200, "xp": 200}, "test_menu")
+		_set_test_status("Granted 200 coins + 200 XP.")
+		return
+	if PlayerManager != null:
+		if PlayerManager.has_method("add_coins"):
+			PlayerManager.add_coins(200)
+		if PlayerManager.has_method("add_xp"):
+			PlayerManager.add_xp(200)
+		_set_test_status("Granted 200 coins + 200 XP (fallback).")
+		return
+	_set_test_status("PlayerManager unavailable.")
+
+func _on_test_level_up_pressed() -> void:
+	if PlayerManager == null or not PlayerManager.has_method("complete_level"):
+		_set_test_status("complete_level unavailable.")
+		return
+	var lvl := 1
+	if PlayerManager.has_method("get_current_level"):
+		lvl = int(PlayerManager.get_current_level())
+	PlayerManager.complete_level(lvl, 9999, 3)
+	_set_test_status("Forced level-up from level %d." % lvl)
+
+func _on_test_run_bonus_queue_pressed() -> void:
+	if _test_busy:
+		_set_test_status("Busy...")
+		return
+	var root = get_tree().get_current_scene()
+	if root == null:
+		_set_test_status("No scene.")
+		return
+	var grid = root.get_node_or_null("Grid")
+	if grid == null or not grid.has_method("_run_interlevel_bonus_queue"):
+		_set_test_status("Grid bonus queue unavailable.")
+		return
+	_test_busy = true
+	_set_test_status("Running queue (milestone + token check)...")
+	var next_level := 2
+	if PlayerManager != null and PlayerManager.has_method("get_current_level"):
+		next_level = int(PlayerManager.get_current_level()) + 1
+	var st = grid.call("_run_interlevel_bonus_queue", 3, next_level)
+	if st is GDScriptFunctionState:
+		yield(st, "completed")
+	_set_test_status("Queue run completed.")
+	_test_busy = false
 
 func _ensure_level_hud():
 	if _hud_root != null and is_instance_valid(_hud_root):
@@ -485,10 +809,22 @@ func _on_shop_pressed():
 
 # MEANER METER: when filled, queue an interlevel bonus token
 func _on_meaner_meter_filled():
-	# Queue an interlevel bonus game token instead of granting an instant wildcard.
+	# Test profile uses interlevel bonus tokens; all other players keep legacy wildcard behavior.
+	if not _is_test_player():
+		var root = get_tree().get_current_scene()
+		var grid = null
+		if root != null:
+			grid = root.get_node_or_null("Grid")
+			if grid == null:
+				grid = root.find_node("Grid", true, false)
+		if grid != null and grid.has_method("spawn_wildcard_safely"):
+			grid.call("spawn_wildcard_safely")
+		if PlayerManager != null and PlayerManager.has_method("reset_meaner_meter"):
+			PlayerManager.reset_meaner_meter()
+		return
+
 	if PlayerManager != null and PlayerManager.has_method("queue_bonus_game_token"):
 		PlayerManager.queue_bonus_game_token("meaner_meter")
-	# Reset the meter after applying the effect
 	if PlayerManager != null and PlayerManager.has_method("reset_meaner_meter"):
 		PlayerManager.reset_meaner_meter()
 
@@ -539,6 +875,8 @@ func _on_bonus_slot_closed(_result = null):
 		PlayerManager.increment_bonus_spins()
 
 func play_bonus_game(game_id: String) -> Dictionary:
+	if not _is_test_player():
+		return {"game_id": game_id, "status": "blocked", "skipped": true, "error": "test_mode_only"}
 	var layer = _ensure_canvas_layer()
 	if layer == null:
 		return {"game_id": game_id, "status": "error", "skipped": true, "error": "missing_canvas_layer"}

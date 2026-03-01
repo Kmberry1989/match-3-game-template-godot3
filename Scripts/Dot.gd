@@ -47,6 +47,12 @@ var wildcard_glow: Sprite = null
 var wildcard_glow_tween = null
 var jailed_scale_mult: float = 1.0
 var wobble_tween = null
+var idle_yawn_up_tween = null
+var idle_yawn_down_tween = null
+var _idle_visual_active: bool = false
+var _idle_base_position: Vector2 = Vector2.ZERO
+var _idle_base_shadow_scale: Vector2 = Vector2.ONE
+var _idle_base_shadow_opacity: float = 0.0
 
 const JAIL_OVERLAY_ENABLED := false
  
@@ -181,6 +187,7 @@ func _exit_tree():
 		wildcard_timer.stop()
 
 func _stop_all_tweens() -> void:
+	_interrupt_idle_animation(false)
 	if pulse_tween:
 		pulse_tween.stop_all()
 		if is_instance_valid(pulse_tween):
@@ -319,6 +326,7 @@ func _on_Dot_input_event(viewport, event, shape_idx):
 	if is_ingredient or is_boss or is_arrested: # Block clicks on ingredients, boss, or jailed avatars
 		return
 	if event is InputEventMouseButton and event.button_index == BUTTON_LEFT and event.is_pressed():
+		_interrupt_idle_animation()
 		emit_signal("dot_clicked", self)
 
 func _on_mouse_entered():
@@ -326,6 +334,7 @@ func _on_mouse_entered():
 		return
 		
 	mouse_inside = true
+	_interrupt_idle_animation()
 	
 	# Emit hover signal for drag-swapping
 	if Input.is_mouse_button_pressed(BUTTON_LEFT):
@@ -357,6 +366,7 @@ func play_surprised_animation():
 func play_drag_sad_animation():
 	if is_ingredient: # Ingredients can't be sad
 		return
+	_interrupt_idle_animation()
 	animation_state = "sad"
 	sprite.texture = sad_texture
 
@@ -498,6 +508,7 @@ func load_textures():
 func set_normal_texture():
 	if is_wildcard or is_ingredient:
 		return
+	_interrupt_idle_animation()
 	animation_state = "normal"
 	sprite.texture = normal_texture
 	clear_jail_overlay()
@@ -810,9 +821,10 @@ func play_idle_animation():
 		sprite.texture = yawn_texture
 		AudioManager.play_sound("yawn")
 		
-		var original_pos = self.position
-		var original_shadow_scale = shadow.scale
-		var original_shadow_opacity = shadow.modulate.a
+		_idle_base_position = self.position
+		_idle_base_shadow_scale = shadow.scale
+		_idle_base_shadow_opacity = shadow.modulate.a
+		_idle_visual_active = true
 		
 		if pulse_tween:
 			pulse_tween.stop_all()
@@ -820,23 +832,62 @@ func play_idle_animation():
 			float_tween.stop_all()
 			
 		var tween = Tween.new()
+		idle_yawn_up_tween = tween
 		add_child(tween)
 		# Lift and inflate over 1.5 seconds
-		tween.interpolate_property(self, "position", original_pos, original_pos + Vector2(0, -15), 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
+		tween.interpolate_property(self, "position", _idle_base_position, _idle_base_position + Vector2(0, -15), 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
 		tween.interpolate_property(sprite, "scale", sprite.scale, (PULSE_SCALE_MIN * 1.5) * scale_multiplier, 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
-		tween.interpolate_property(shadow, "scale", original_shadow_scale, original_shadow_scale * 2.5, 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
-		tween.interpolate_property(shadow, "modulate:a", original_shadow_opacity, 0.0, 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
+		tween.interpolate_property(shadow, "scale", _idle_base_shadow_scale, _idle_base_shadow_scale * 2.5, 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
+		tween.interpolate_property(shadow, "modulate:a", _idle_base_shadow_opacity, 0.0, 1.5, Tween.TRANS_QUINT, Tween.EASE_OUT)
 		tween.start()
 		yield (tween, "tween_all_completed")
+		idle_yawn_up_tween = null
 
 		if animation_state == "idle":
 			var down_tween = Tween.new()
+			idle_yawn_down_tween = down_tween
 			add_child(down_tween)
-			down_tween.interpolate_property(self, "position", position, original_pos, 1.0)
+			down_tween.interpolate_property(self, "position", position, _idle_base_position, 1.0)
 			down_tween.interpolate_property(sprite, "scale", sprite.scale, PULSE_SCALE_MIN * scale_multiplier, 1.0)
-			down_tween.interpolate_property(shadow, "scale", shadow.scale, original_shadow_scale, 1.0)
-			down_tween.interpolate_property(shadow, "modulate:a", shadow.modulate.a, original_shadow_opacity, 1.0)
+			down_tween.interpolate_property(shadow, "scale", shadow.scale, _idle_base_shadow_scale, 1.0)
+			down_tween.interpolate_property(shadow, "modulate:a", shadow.modulate.a, _idle_base_shadow_opacity, 1.0)
 			down_tween.start()
 			yield (down_tween, "tween_all_completed")
+			idle_yawn_down_tween = null
+			_idle_visual_active = false
 			set_normal_texture()
 			start_pulsing()
+		else:
+			_interrupt_idle_animation(false)
+
+func _interrupt_idle_animation(reset_state: bool = true) -> void:
+	var up_tween = idle_yawn_up_tween
+	idle_yawn_up_tween = null
+	if up_tween != null:
+		up_tween.stop_all()
+		if is_instance_valid(up_tween):
+			if up_tween.has_signal("tween_all_completed"):
+				up_tween.emit_signal("tween_all_completed")
+			up_tween.queue_free()
+	var down_tween = idle_yawn_down_tween
+	idle_yawn_down_tween = null
+	if down_tween != null:
+		down_tween.stop_all()
+		if is_instance_valid(down_tween):
+			if down_tween.has_signal("tween_all_completed"):
+				down_tween.emit_signal("tween_all_completed")
+			down_tween.queue_free()
+	if _idle_visual_active:
+		position = _idle_base_position
+		if sprite != null:
+			sprite.scale = PULSE_SCALE_MIN * scale_multiplier * jailed_scale_mult
+		if shadow != null:
+			shadow.scale = _idle_base_shadow_scale
+			var s_modulate = shadow.modulate
+			s_modulate.a = _idle_base_shadow_opacity
+			shadow.modulate = s_modulate
+		_idle_visual_active = false
+	if reset_state and animation_state == "idle":
+		animation_state = "normal"
+		if not is_wildcard and not is_ingredient and normal_texture != null:
+			sprite.texture = normal_texture

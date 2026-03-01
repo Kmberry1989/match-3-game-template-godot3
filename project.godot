@@ -24,6 +24,16 @@ _global_script_classes=[ {
 "language": "GDScript",
 "path": "res://Scripts/BonusSlotMachine.gd"
 }, {
+"base": "Node",
+"class": "CosmeticUnlocks",
+"language": "GDScript",
+"path": "res://Scripts/CosmeticUnlocks.gd"
+}, {
+"base": "Node",
+"class": "CosmeticsCatalog",
+"language": "GDScript",
+"path": "res://Scripts/CosmeticsCatalog.gd"
+}, {
 "base": "AuthProvider",
 "class": "FacebookProvider",
 "language": "GDScript",
@@ -143,6 +153,8 @@ _global_script_class_icons={
 "Achievement": "",
 "AuthProvider": "",
 "BonusSlotMachine": "",
+"CosmeticUnlocks": "",
+"CosmeticsCatalog": "",
 "FacebookProvider": "",
 "FirebaseAuth": "",
 "FirebaseDatabase": "",

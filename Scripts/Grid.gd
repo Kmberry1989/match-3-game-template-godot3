@@ -1153,6 +1153,8 @@ func _recover_from_stall_if_needed() -> void:
 func _maybe_autoplay():
 	if not _is_autoplay_player():
 		return
+	if get_tree() != null and get_tree().paused:
+		return
 	if state != move or is_dragging or _player_drop_active or _auto_playing:
 		return
 	var swap = _find_autoplay_swap()
@@ -1175,6 +1177,9 @@ func _find_autoplay_swap():
 	return null
 
 func _execute_autoplay_swap(start_pos: Vector2, end_pos: Vector2):
+	if get_tree() != null and get_tree().paused:
+		_auto_playing = false
+		return
 	var swap_result = swap_dots(int(start_pos.x), int(start_pos.y), int(end_pos.x), int(end_pos.y))
 	if typeof(swap_result) == TYPE_OBJECT and swap_result is GDScriptFunctionState:
 		yield(swap_result, "completed")
@@ -1187,6 +1192,14 @@ func _is_autoplay_player() -> bool:
 		return false
 	var name = String(PlayerManager.get_player_name()).strip_edges().to_lower()
 	return name == "otto"
+
+func _is_test_profile_player() -> bool:
+	if PlayerManager == null:
+		return false
+	if not PlayerManager.has_method("get_player_name"):
+		return false
+	var name = String(PlayerManager.get_player_name()).strip_edges().to_lower()
+	return name == "test"
 
 
 func _maybe_trigger_arrest_event() -> void:
@@ -2640,9 +2653,10 @@ func _on_level_up(new_level):
 	print("Level up to: " + str(new_level))
 	var completed_level: int = max(1, int(new_level) - 1)
 	state = wait
-	var bonus_state = _run_interlevel_bonus_queue(completed_level, new_level)
-	if bonus_state is GDScriptFunctionState:
-		yield(bonus_state, "completed")
+	if _is_test_profile_player():
+		var bonus_state = _run_interlevel_bonus_queue(completed_level, new_level)
+		if bonus_state is GDScriptFunctionState:
+			yield(bonus_state, "completed")
 	yield(celebrate_stage_transition(new_level), "completed")
 	
 	for i in range(width):
@@ -2710,6 +2724,8 @@ func _normalize_bonus_result(game_id: String, raw_result) -> Dictionary:
 	return payload
 
 func _run_interlevel_bonus_queue(completed_level: int, _new_level: int):
+	if not _is_test_profile_player():
+		return
 	var queue: Array = []
 	if completed_level > 0 and completed_level % 3 == 0:
 		queue.append("slot_machine")
