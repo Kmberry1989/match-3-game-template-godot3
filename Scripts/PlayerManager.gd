@@ -47,6 +47,16 @@ var player_data = {
 		}
 	},
 	"jailbreaks": {},
+	"bonus_games": {
+		"meter_tokens": 0,
+		"cognitive_cycle_index": 0,
+		"stats": {
+			"slot": 0,
+			"shelf_sort": 0,
+			"memory_pairs": 0,
+			"skipped": 0
+		}
+	},
 	"objectives": {
 		"time_played_1hr": false
 	}
@@ -54,6 +64,18 @@ var player_data = {
 
 const CosmeticsCatalog = preload("res://Scripts/CosmeticsCatalog.gd")
 const CosmeticUnlocks = preload("res://Scripts/CosmeticUnlocks.gd")
+
+func _default_bonus_games_state() -> Dictionary:
+	return {
+		"meter_tokens": 0,
+		"cognitive_cycle_index": 0,
+		"stats": {
+			"slot": 0,
+			"shelf_sort": 0,
+			"memory_pairs": 0,
+			"skipped": 0
+		}
+	}
 
 func _ready():
 	if firebase == null:
@@ -65,9 +87,11 @@ func _ready():
 				player_data = local
 				_normalize_frame_state()
 				_normalize_cosmetics_state()
+		_normalize_bonus_games_state()
 		_hook_achievement_cosmetics()
 		return
 	_normalize_cosmetics_state()
+	_normalize_bonus_games_state()
 	_hook_achievement_cosmetics()
 
 func load_player_data(user_info):
@@ -94,6 +118,7 @@ func load_player_data(user_info):
 			player_data = Utilities.fields2dict({"fields": doc.document})
 			_normalize_frame_state()
 			_normalize_cosmetics_state()
+			_normalize_bonus_games_state()
 		else:
 			print("New player. Creating default data.")
 			var display = ""
@@ -105,6 +130,7 @@ func load_player_data(user_info):
 			yield(coll.add(player_uid, player_data), "completed")
 			_normalize_frame_state()
 			_normalize_cosmetics_state()
+			_normalize_bonus_games_state()
 	else:
 		print("No UID found in user_info")
 
@@ -326,6 +352,40 @@ func _normalize_cosmetics_state() -> void:
 	if SaveManager != null:
 		SaveManager.save_player(player_data)
 
+func _normalize_bonus_games_state() -> void:
+	var defaults: Dictionary = _default_bonus_games_state()
+	if not player_data.has("bonus_games") or typeof(player_data["bonus_games"]) != TYPE_DICTIONARY:
+		player_data["bonus_games"] = defaults.duplicate(true)
+	var bg: Dictionary = player_data["bonus_games"]
+	bg["meter_tokens"] = max(0, int(bg.get("meter_tokens", defaults["meter_tokens"])))
+	bg["cognitive_cycle_index"] = max(0, int(bg.get("cognitive_cycle_index", defaults["cognitive_cycle_index"])))
+	if not bg.has("stats") or typeof(bg["stats"]) != TYPE_DICTIONARY:
+		bg["stats"] = defaults["stats"].duplicate(true)
+	var stats: Dictionary = bg["stats"]
+	for key in defaults["stats"].keys():
+		stats[key] = max(0, int(stats.get(key, defaults["stats"][key])))
+	bg["stats"] = stats
+	player_data["bonus_games"] = bg
+	if SaveManager != null:
+		SaveManager.save_player(player_data)
+
+func _merge_pending_bonus(payload: Dictionary) -> void:
+	if typeof(payload) != TYPE_DICTIONARY or payload.size() == 0:
+		return
+	var pending: Dictionary = player_data.get("pending_bonus", {})
+	if typeof(pending) != TYPE_DICTIONARY:
+		pending = {}
+	for key in payload.keys():
+		match String(key):
+			"wildcards", "clear_rows", "clear_cols":
+				pending[key] = int(pending.get(key, 0)) + int(payload[key])
+			"xp_multiplier":
+				if typeof(payload[key]) == TYPE_DICTIONARY:
+					pending[key] = payload[key].duplicate(true)
+			_:
+				pending[key] = payload[key]
+	player_data["pending_bonus"] = pending
+
 func _hook_achievement_cosmetics() -> void:
 	var am = get_node_or_null("/root/AchievementManager")
 	if am != null and not am.is_connected("achievement_unlocked", self, "_on_achievement_unlocked"):
@@ -503,6 +563,76 @@ func reset_meaner_meter() -> void:
 	emit_signal("meaner_meter_changed", 0, int(meter.get("max", 100)))
 	save_player_data()
 
+func queue_bonus_game_token(source: String = "meaner_meter") -> void:
+	_normalize_bonus_games_state()
+	var bg: Dictionary = player_data.get("bonus_games", _default_bonus_games_state().duplicate(true))
+	bg["meter_tokens"] = int(bg.get("meter_tokens", 0)) + 1
+	player_data["bonus_games"] = bg
+	save_player_data()
+	print("[PlayerManager] Queued bonus token from: %s (tokens=%d)" % [source, int(bg.get("meter_tokens", 0))])
+
+func consume_bonus_game_token() -> bool:
+	_normalize_bonus_games_state()
+	var bg: Dictionary = player_data.get("bonus_games", _default_bonus_games_state().duplicate(true))
+	var tokens: int = int(bg.get("meter_tokens", 0))
+	if tokens <= 0:
+		return false
+	bg["meter_tokens"] = tokens - 1
+	player_data["bonus_games"] = bg
+	save_player_data()
+	return true
+
+func next_cognitive_bonus_game_id() -> String:
+	_normalize_bonus_games_state()
+	var rotation: Array = ["shelf_sort", "memory_pairs"]
+	var bg: Dictionary = player_data.get("bonus_games", _default_bonus_games_state().duplicate(true))
+	var idx: int = int(bg.get("cognitive_cycle_index", 0)) % rotation.size()
+	var game_id: String = String(rotation[idx])
+	bg["cognitive_cycle_index"] = (idx + 1) % rotation.size()
+	player_data["bonus_games"] = bg
+	save_player_data()
+	return game_id
+
+func apply_bonus_reward(reward: Dictionary, reason: String = "") -> void:
+	if typeof(reward) != TYPE_DICTIONARY or reward.size() == 0:
+		return
+	var coins_awarded: int = int(reward.get("coins", 0))
+	var xp_awarded: int = int(reward.get("xp", 0))
+	if coins_awarded > 0:
+		player_data["coins"] = int(player_data.get("coins", 0)) + coins_awarded
+		emit_signal("coins_changed", player_data["coins"])
+	if reward.has("pending_bonus") and typeof(reward["pending_bonus"]) == TYPE_DICTIONARY:
+		_merge_pending_bonus(reward["pending_bonus"])
+	if xp_awarded > 0:
+		add_xp(xp_awarded)
+	save_player_data()
+	if reason != "":
+		print("[PlayerManager] Applied bonus reward (%s): %s" % [reason, str(reward)])
+
+func mark_bonus_game_result(game_id: String, skipped: bool) -> void:
+	_normalize_bonus_games_state()
+	var bg: Dictionary = player_data.get("bonus_games", _default_bonus_games_state().duplicate(true))
+	var stats: Dictionary = bg.get("stats", _default_bonus_games_state()["stats"].duplicate(true))
+	match game_id:
+		"slot_machine":
+			stats["slot"] = int(stats.get("slot", 0)) + 1
+			if not skipped:
+				player_data["bonus_spins"] = int(player_data.get("bonus_spins", 0)) + 1
+				achievement_progress("frequent_flyer", 1)
+				if int(player_data.get("bonus_spins", 0)) >= 5:
+					achievement_unlock("frequent_flyer")
+		"shelf_sort":
+			stats["shelf_sort"] = int(stats.get("shelf_sort", 0)) + 1
+		"memory_pairs":
+			stats["memory_pairs"] = int(stats.get("memory_pairs", 0)) + 1
+		_:
+			pass
+	if skipped:
+		stats["skipped"] = int(stats.get("skipped", 0)) + 1
+	bg["stats"] = stats
+	player_data["bonus_games"] = bg
+	save_player_data()
+
 func increment_jailbreak_for_color(color: String) -> void:
 	if not player_data.has("jailbreaks"):
 		player_data["jailbreaks"] = {}
@@ -534,6 +664,7 @@ func reset_progress():
 			"unlocks": CosmeticsCatalog.get_default_unlocks()
 		},
 		"jailbreaks": {},
+		"bonus_games": _default_bonus_games_state(),
 		"objectives": {
 			"time_played_1hr": false
 		}

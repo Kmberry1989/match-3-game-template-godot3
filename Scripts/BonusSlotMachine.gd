@@ -1,7 +1,7 @@
 extends Control
 class_name BonusSlotMachine
 
-signal finished
+signal finished(result)
 
 onready var PlayerManager = get_node_or_null("/root/PlayerManager")
 onready var AudioManager = get_node_or_null("/root/AudioManager")
@@ -26,6 +26,7 @@ enum SymbolId { COIN, XP, WILDCARD, ROW_CLEAR, COL_CLEAR, MULT2X, MULT3X, FREE_S
 var _symbols: Array = []
 var _result_label: Label = null
 var _spin_button: BaseButton = null
+var _skip_button: Button = null
 var _reels: Array = []
 var _stops: Array = []
 var _spinning: bool = false
@@ -37,6 +38,12 @@ var _stop_targets: Array = []
 var _reel_orders: Array = []
 var _yielding_ack: bool = false
 var _post_ack_action: String = "close"  # "close" or "spin_again"
+var _result_payload: Dictionary = {
+	"game_id": "slot_machine",
+	"status": "completed",
+	"skipped": false,
+	"reward_applied": true
+}
 
 # Optional: manually assign textures per reel from the editor
 export var apply_manual_textures_on_ready: bool = false
@@ -67,6 +74,7 @@ func _ready() -> void:
 			_symbols[i]["tex"] = SYMBOL_TEX[sid]
 	_result_label = $Panel/VBox/ResultLabel as Label
 	_spin_button = $Panel/VBox/HBox/SpinButton as BaseButton
+	_skip_button = $Panel/VBox/HBox/SkipButton as Button
 	_reels = [
 		$Panel/VBox/Reels/Reel1 as Control,
 		$Panel/VBox/Reels/Reel2 as Control,
@@ -245,6 +253,12 @@ func _on_SpinButton_pressed() -> void:
 		return
 	if _spinning or _finished:
 		return
+	_result_payload = {
+		"game_id": "slot_machine",
+		"status": "completed",
+		"skipped": false,
+		"reward_applied": true
+	}
 	_spinning = true
 	_reels_stopped = 0
 	_result_label.text = ""
@@ -295,6 +309,8 @@ func _spin_reel_cascade(reel_index: int) -> void:
 	_on_reel_stopped(reel_index)
 
 func _on_reel_stopped(_reel_index: int) -> void:
+	if _finished:
+		return
 	_reels_stopped += 1
 	if _reels_stopped >= _reels.size():
 		_spinning = false
@@ -302,6 +318,8 @@ func _on_reel_stopped(_reel_index: int) -> void:
 		_evaluate_cascade_result()
 
 func _on_slot_reel_finished(index: int) -> void:
+	if _finished:
+		return
 	if AudioManager != null:
 		AudioManager.play_sound("slot_stop")
 	_on_reel_stopped(index)
@@ -314,6 +332,8 @@ func _current_top_index(reel_index: int) -> int:
 	return ((steps % block) + block) % block
 
 func _evaluate_cascade_result() -> void:
+	if _finished:
+		return
 	var a = _get_top_from_reel(0)
 	var b = _get_top_from_reel(1)
 	var c = _get_top_from_reel(2)
@@ -411,6 +431,8 @@ func _spin_reel(reel: Control, stop_index: int, duration: float) -> void:
 		_evaluate_result()
 
 func _evaluate_result() -> void:
+	if _finished:
+		return
 	_spinning = false
 	_spin_button.disabled = false
 	var ids: Array = []
@@ -489,6 +511,11 @@ func _finish_from_player_ack() -> void:
 		return
 
 	# Default action: close the bonus UI and return to game
+	_finished = true
+	if _spin_button != null:
+		_spin_button.disabled = true
+	if _skip_button != null:
+		_skip_button.disabled = true
 	_animate_out()
 	# _animate_out yields until the tween completes, then we signal and free
 
@@ -513,12 +540,10 @@ func _majority_symbol(ids: Array) -> int:
 func _apply_payout_3(sym_id: int) -> String:
 	match sym_id:
 		SymbolId.COIN:
-			PlayerManager.player_data["coins"] = PlayerManager.get_coins() + 100
-			PlayerManager.emit_signal("coins_changed", PlayerManager.get_coins())
-			PlayerManager.save_player_data()
+			_award_reward({"coins": 100}, "slot_3_coin")
 			return "You've won 100 coins, which have been added to your balance."
 		SymbolId.XP:
-			PlayerManager.add_xp(600)
+			_award_reward({"xp": 600}, "slot_3_xp")
 			return "You've gained 600 experience points."
 		SymbolId.WILDCARD:
 			_set_pending_bonus({"wildcards": 3})
@@ -543,12 +568,10 @@ func _apply_payout_3(sym_id: int) -> String:
 func _apply_payout_2(sym_id: int) -> String:
 	match sym_id:
 		SymbolId.COIN:
-			PlayerManager.player_data["coins"] = PlayerManager.get_coins() + 20
-			PlayerManager.emit_signal("coins_changed", PlayerManager.get_coins())
-			PlayerManager.save_player_data()
+			_award_reward({"coins": 20}, "slot_2_coin")
 			return "You've won 20 coins."
 		SymbolId.XP:
-			PlayerManager.add_xp(120)
+			_award_reward({"xp": 120}, "slot_2_xp")
 			return "You've gained 120 experience points."
 		SymbolId.WILDCARD:
 			_set_pending_bonus({"wildcards": 1})
@@ -571,23 +594,58 @@ func _apply_payout_2(sym_id: int) -> String:
 			return ""
 
 func _apply_payout_mixed() -> String:
-	PlayerManager.player_data["coins"] = PlayerManager.get_coins() + 10
-	PlayerManager.emit_signal("coins_changed", PlayerManager.get_coins())
-	PlayerManager.save_player_data()
+	_award_reward({"coins": 10}, "slot_mixed")
 	return "You've won a consolation prize of 10 coins."
 
 func _set_pending_bonus(payload: Dictionary) -> void:
-	var pending: Dictionary = {}
-	if typeof(PlayerManager.player_data) == TYPE_DICTIONARY:
-		pending = PlayerManager.player_data.get("pending_bonus", {})
+	if typeof(payload) != TYPE_DICTIONARY or payload.size() == 0:
+		return
+	_award_reward({"pending_bonus": payload}, "slot_pending_bonus")
+
+func _award_reward(reward: Dictionary, reason: String) -> void:
+	if PlayerManager == null:
+		return
+	if PlayerManager.has_method("apply_bonus_reward"):
+		PlayerManager.apply_bonus_reward(reward, reason)
+		return
+	# Backward-compatible fallback for older PlayerManager builds.
+	if reward.has("coins"):
+		var coins: int = int(reward.get("coins", 0))
+		if coins > 0:
+			PlayerManager.player_data["coins"] = int(PlayerManager.player_data.get("coins", 0)) + coins
+			PlayerManager.emit_signal("coins_changed", PlayerManager.player_data["coins"])
+	if reward.has("xp"):
+		var xp: int = int(reward.get("xp", 0))
+		if xp > 0 and PlayerManager.has_method("add_xp"):
+			PlayerManager.add_xp(xp)
+	if reward.has("pending_bonus"):
+		var pending: Dictionary = PlayerManager.player_data.get("pending_bonus", {})
+		var payload: Dictionary = reward.get("pending_bonus", {})
 		for k in payload.keys():
 			pending[k] = payload[k]
 		PlayerManager.player_data["pending_bonus"] = pending
-		PlayerManager.save_player_data()
+	PlayerManager.save_player_data()
 
 func _on_CloseButton_pressed() -> void:
-	emit_signal("finished")
-	queue_free()
+	_on_SkipButton_pressed()
+
+func _on_SkipButton_pressed() -> void:
+	if _finished:
+		return
+	_finished = true
+	_spinning = false
+	_yielding_ack = false
+	_result_payload = {
+		"game_id": "slot_machine",
+		"status": "skipped",
+		"skipped": true,
+		"reward_applied": false
+	}
+	if _spin_button != null:
+		_spin_button.disabled = true
+	if _skip_button != null:
+		_skip_button.disabled = true
+	_animate_out()
 
 func _apply_assets() -> void:
 	var bg_path: String = "res://Assets/BonusSlot/slot_bg.png"
@@ -915,6 +973,8 @@ func _finish_after_delay() -> void:
 		return
 	_finished = true
 	_spin_button.disabled = true
+	if _skip_button != null:
+		_skip_button.disabled = true
 	yield(get_tree().create_timer(2.0), "timeout")
 	_animate_out()
 
@@ -984,7 +1044,7 @@ func _animate_out() -> void:
 		t.parallel().tween_property(dimmer, "modulate:a", 0.0, 0.25).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	yield(t, "finished")
 	if has_signal("finished"):
-		emit_signal("finished")
+		emit_signal("finished", _result_payload)
 	queue_free()
 
 func _align_glows_to_reels() -> void:

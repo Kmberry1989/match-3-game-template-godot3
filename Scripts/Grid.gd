@@ -2638,6 +2638,11 @@ func can_move_create_match(i, j, direction):
 
 func _on_level_up(new_level):
 	print("Level up to: " + str(new_level))
+	var completed_level: int = max(1, int(new_level) - 1)
+	state = wait
+	var bonus_state = _run_interlevel_bonus_queue(completed_level, new_level)
+	if bonus_state is GDScriptFunctionState:
+		yield(bonus_state, "completed")
 	yield(celebrate_stage_transition(new_level), "completed")
 	
 	for i in range(width):
@@ -2687,6 +2692,67 @@ func _on_level_up(new_level):
 	yield(ensure_moves_available(), "completed")
 	state = move
 	_synchronize_after_move()
+
+func _normalize_bonus_result(game_id: String, raw_result) -> Dictionary:
+	var payload: Dictionary = {}
+	if typeof(raw_result) == TYPE_DICTIONARY:
+		payload = raw_result
+	elif typeof(raw_result) == TYPE_ARRAY and raw_result.size() > 0 and typeof(raw_result[0]) == TYPE_DICTIONARY:
+		payload = raw_result[0]
+	payload["game_id"] = String(payload.get("game_id", game_id))
+	if not payload.has("status"):
+		if bool(payload.get("skipped", false)):
+			payload["status"] = "skipped"
+		else:
+			payload["status"] = "completed"
+	if not payload.has("skipped"):
+		payload["skipped"] = String(payload.get("status", "")) == "skipped"
+	return payload
+
+func _run_interlevel_bonus_queue(completed_level: int, _new_level: int):
+	var queue: Array = []
+	if completed_level > 0 and completed_level % 3 == 0:
+		queue.append("slot_machine")
+
+	var consumed_token: bool = false
+	if PlayerManager != null and PlayerManager.has_method("consume_bonus_game_token"):
+		consumed_token = PlayerManager.consume_bonus_game_token()
+	if consumed_token:
+		var cognitive_game_id: String = "shelf_sort"
+		if PlayerManager != null and PlayerManager.has_method("next_cognitive_bonus_game_id"):
+			cognitive_game_id = String(PlayerManager.next_cognitive_bonus_game_id())
+		queue.append(cognitive_game_id)
+
+	if queue.size() == 0:
+		return
+
+	for game_id in queue:
+		var raw_result = {"game_id": game_id, "status": "error", "skipped": true, "error": "not_played"}
+		if game_ui != null and game_ui.has_method("play_bonus_game"):
+			raw_result = game_ui.play_bonus_game(game_id)
+			if raw_result is GDScriptFunctionState:
+				raw_result = yield(raw_result, "completed")
+
+		var result: Dictionary = _normalize_bonus_result(game_id, raw_result)
+		var status: String = String(result.get("status", "completed"))
+		var skipped: bool = bool(result.get("skipped", false))
+		var errored: bool = status == "error"
+
+		if PlayerManager != null and PlayerManager.has_method("mark_bonus_game_result"):
+			PlayerManager.mark_bonus_game_result(game_id, skipped or errored)
+
+		if skipped or errored:
+			if PlayerManager != null and PlayerManager.has_method("apply_bonus_reward"):
+				PlayerManager.apply_bonus_reward({"coins": 5, "xp": 0}, "bonus_fallback_%s" % game_id)
+			continue
+
+		var reward_applied: bool = bool(result.get("reward_applied", false))
+		if reward_applied:
+			continue
+		var reward = result.get("reward", {})
+		if typeof(reward) == TYPE_DICTIONARY and reward.size() > 0:
+			if PlayerManager != null and PlayerManager.has_method("apply_bonus_reward"):
+				PlayerManager.apply_bonus_reward(reward, "bonus_%s" % game_id)
 
 func celebrate_stage_transition(new_level):
 	state = wait

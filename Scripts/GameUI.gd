@@ -29,6 +29,11 @@ var _hud_root: Control = null
 var _goal_label: Label = null
 var _goal_count_label: Label = null
 const LevelManagerScript = preload("res://Scripts/LevelManager.gd")
+const BONUS_GAME_SCENES: Dictionary = {
+	"slot_machine": "res://Scenes/BonusSlotMachine.tscn",
+	"shelf_sort": "res://Scenes/BonusShelfSort.tscn",
+	"memory_pairs": "res://Scenes/BonusMemoryPairs.tscn"
+}
 
 func _set_mouse_filters_for_passthrough(root: Node) -> void:
 	if root == null:
@@ -478,14 +483,11 @@ func _on_shop_pressed():
 		AudioManager.play_sound("ui_click")
 	get_tree().change_scene("res://Scenes/Shop.tscn")
 
-# MEANER METER: when filled, show the bonus slot
+# MEANER METER: when filled, queue an interlevel bonus token
 func _on_meaner_meter_filled():
-	# Instead of launching the bonus slot, spawn a wildcard safely on the grid
-	var root = get_tree().get_current_scene()
-	if root != null:
-		var grid = root.get_node_or_null("Grid")
-		if grid != null and grid.has_method("spawn_wildcard_safely"):
-			grid.spawn_wildcard_safely()
+	# Queue an interlevel bonus game token instead of granting an instant wildcard.
+	if PlayerManager != null and PlayerManager.has_method("queue_bonus_game_token"):
+		PlayerManager.queue_bonus_game_token("meaner_meter")
 	# Reset the meter after applying the effect
 	if PlayerManager != null and PlayerManager.has_method("reset_meaner_meter"):
 		PlayerManager.reset_meaner_meter()
@@ -528,13 +530,56 @@ func _show_bonus_slot():
 		slot.connect("finished", self, "_on_bonus_slot_closed")
 	layer.add_child(slot)
 
-func _on_bonus_slot_closed():
+func _on_bonus_slot_closed(_result = null):
 	# Reset the meter after the bonus has been played
 	if PlayerManager != null and PlayerManager.has_method("reset_meaner_meter"):
 		PlayerManager.reset_meaner_meter()
 	# Track frequent flyer achievement progress
 	if PlayerManager != null and PlayerManager.has_method("increment_bonus_spins"):
 		PlayerManager.increment_bonus_spins()
+
+func play_bonus_game(game_id: String) -> Dictionary:
+	var layer = _ensure_canvas_layer()
+	if layer == null:
+		return {"game_id": game_id, "status": "error", "skipped": true, "error": "missing_canvas_layer"}
+	if not BONUS_GAME_SCENES.has(game_id):
+		return {"game_id": game_id, "status": "error", "skipped": true, "error": "unknown_game_id"}
+
+	var scene_path: String = String(BONUS_GAME_SCENES[game_id])
+	var packed = load(scene_path)
+	if packed == null:
+		return {"game_id": game_id, "status": "error", "skipped": true, "error": "load_failed", "scene": scene_path}
+
+	var existing = layer.get_node_or_null("ActiveBonusGame")
+	if existing != null:
+		existing.queue_free()
+
+	var instance = packed.instance()
+	if instance == null:
+		return {"game_id": game_id, "status": "error", "skipped": true, "error": "instance_failed", "scene": scene_path}
+
+	instance.name = "ActiveBonusGame"
+	layer.add_child(instance)
+	if not instance.has_signal("finished"):
+		instance.queue_free()
+		return {"game_id": game_id, "status": "error", "skipped": true, "error": "missing_finished_signal"}
+
+	var sig = yield(instance, "finished")
+	var payload: Dictionary = {}
+	if typeof(sig) == TYPE_DICTIONARY:
+		payload = sig
+	elif typeof(sig) == TYPE_ARRAY and sig.size() > 0 and typeof(sig[0]) == TYPE_DICTIONARY:
+		payload = sig[0]
+	if not payload.has("game_id"):
+		payload["game_id"] = game_id
+	if not payload.has("status"):
+		if bool(payload.get("skipped", false)):
+			payload["status"] = "skipped"
+		else:
+			payload["status"] = "completed"
+	if not payload.has("skipped"):
+		payload["skipped"] = String(payload.get("status", "")) == "skipped"
+	return payload
 
 func _on_meaner_meter_changed(cur, mx):
 	if _meaner_bar != null:

@@ -78,3 +78,45 @@ This document provides an in-depth explanation of the game modes in "Meaner Matc
 **Status**: **Not Implemented**.
 - Defined in `LevelManager.gd` enum but has no logic in `Grid.gd`.
 - **Potential Implementation**: Could be similar to Jailbreak but with permanent unlocking of new avatars/skins upon completion.
+
+## 7. Interlevel Bonus Games (Slot + Cognitive Modes)
+**Goal**: Add casual bonus play between levels without interrupting core Match-3 progression.
+
+### Trigger Rules
+- Compute `completed_level = new_level - 1` in `Grid._on_level_up`.
+- Queue `slot_machine` when `completed_level % 3 == 0` (milestone bonus).
+- Consume at most one `bonus_games.meter_tokens` token and queue one cognitive game by rotation:
+  - `shelf_sort` then `memory_pairs`, repeating.
+- Maximum queue size is 2 games per transition (slot + one cognitive game).
+
+### Flow
+- `Grid._run_interlevel_bonus_queue()` executes queued games sequentially before `celebrate_stage_transition()`.
+- `GameUI.play_bonus_game(game_id)` launches each bonus as a modal overlay on the active `CanvasLayer`.
+- Each minigame emits `finished(result)` with payload fields such as:
+  - `game_id`, `status`, `skipped`, optional `reward`, optional `reward_applied`.
+- On skipped/error results, fallback reward is granted (`coins: 5`).
+
+### Reward Routing
+- All minigame rewards pass through `PlayerManager.apply_bonus_reward(reward, reason)`.
+- Canonical reward shape:
+  - `{"coins": int, "xp": int, "pending_bonus": {...}}`
+- `PlayerManager` merges `pending_bonus` cleanly and persists updates.
+
+### Persistent Bonus State
+- New `PlayerManager.player_data["bonus_games"]` state:
+  - `meter_tokens`
+  - `cognitive_cycle_index`
+  - `stats.slot`, `stats.shelf_sort`, `stats.memory_pairs`, `stats.skipped`
+- Normalized automatically for new/existing saves.
+
+### Minigames
+- **Slot Machine** (`Scenes/BonusSlotMachine.tscn`)
+  - Existing payout table retained.
+  - Explicit `Skip` button added.
+  - Emits structured result payload.
+- **Shelf Sort** (`Scenes/BonusShelfSort.tscn`)
+  - 3 shelves, 9 draggable cards, no timer, hint + skip.
+  - Win reward: `coins 30`, `xp 80`, `pending_bonus.clear_rows = 1`.
+- **Memory Pairs** (`Scenes/BonusMemoryPairs.tscn`)
+  - 12 cards (6 pairs), 2-second preview, no timer, hint + skip.
+  - Win reward: `coins 30`, `xp 80`, `pending_bonus.xp_multiplier = {mult: 2, matches: 1}`.

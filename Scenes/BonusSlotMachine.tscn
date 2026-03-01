@@ -133,6 +133,13 @@ alignment = 1
 margin_left = 616.0
 margin_right = 616.0
 
+[node name="SkipButton" type="Button" parent="Panel/VBox/HBox"]
+margin_left = 640.0
+margin_right = 760.0
+margin_bottom = 42.0
+rect_min_size = Vector2( 120, 42 )
+text = "Skip"
+
 [node name="ResultLabel" type="Label" parent="Panel/VBox"]
 margin_top = 556.0
 margin_right = 1232.0
@@ -140,3 +147,4 @@ margin_bottom = 570.0
 align = 1
 
 [connection signal="pressed" from="Panel/VBox/HBox/SpinButton" to="." method="_on_SpinButton_pressed"]
+[connection signal="pressed" from="Panel/VBox/HBox/SkipButton" to="." method="_on_SkipButton_pressed"]
